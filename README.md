@@ -10,7 +10,7 @@
 
 ## BINTool
 
-``java -jar BINTool.jar -d input.bin output_folder
+``java -jar BINTool.jar -d input.bin output_folder  
   java -jar BINTool.jar -c input_folder output.bin``
 
 ## NVSGTool
