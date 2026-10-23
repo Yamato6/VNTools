@@ -4,23 +4,55 @@ Tools for extracting and repacking assets from the **Favorite View Point System*
 
 ## Features
 
-- **BIN Archive Extraction/Packing**: Extract files from `.bin` archives and repack modified files
-- **NVSG Image Conversion**: Convert proprietary NVSG images to PNG and back
-- **HCB Script Decompilation/Rebuilding**: Decompile game scripts for translation and rebuild them
+- **Graphical interface** (CustomTkinter) and command line
+- **BIN Archive Extraction/Packing**: List, extract (all or a selection) and repack `.bin` archives
+- **NVSG Image Conversion**: Convert proprietary NVSG images to PNG and back, with image preview
+- **HCB Script Decompilation/Rebuilding**: Decompile game scripts for translation and rebuild them. **Translated lines can be longer than the original** (up to 254 bytes per line)
+- **Custom font support**: A character table maps characters such as `á`, `ñ` or `¿` to the Shift-JIS characters your custom font draws them as
 - **Automatic Format Detection**: Audio files (OGG/WAV) are automatically detected and given proper extensions
 - **Batch Processing**: Convert entire folders of images at once
+
+## Files
+
+| File | Description |
+|------|-------------|
+| `fvp_bin.py`, `fvp_nvsg.py`, `fvp_hcb.py` | Format logic (shared by the CLI and the GUI) |
+| `fvp_tools.py` | Command line tool (opens the GUI when run without arguments) |
+| `fvp_gui.py` | Graphical interface |
+| `charmap_es.txt` | Character table template for a custom font |
+| `build_exe.bat` | Builds a standalone `.exe` with PyInstaller |
 
 ## Requirements
 
 - Python 3.8+
 - Pillow
 - NumPy
+- CustomTkinter (GUI only)
 
 ### Installation
 
 ```bash
-pip install pillow numpy
+pip install -r requirements.txt
 ```
+
+## Graphical Interface
+
+```bash
+python fvp_gui.py
+```
+
+- **Archivos BIN**: open a `.bin`, filter its file list, preview images, extract everything or the selected files, and repack a folder.
+- **Imágenes NVSG**: convert a folder of NVSG images to PNG (creates `decode_log.txt`) and back, with preview.
+- **Scripts HCB**: extract strings (optionally decompile), rebuild with your translation and see a report of the lines that grew, were cut or had characters replaced.
+
+### Standalone executable
+
+```bash
+pip install -r requirements.txt
+build_exe.bat
+```
+
+The result is `dist\FVP_Tools_GUI.exe`, which runs without Python installed.
 
 ## Usage
 
@@ -43,6 +75,8 @@ python fvp_tools.py bin-extract graph_bg.bin images_output/ --no-ext
 
 **Options:**
 - `--no-ext`: Do not add file extensions. Use this when extracting NVSG images that need to be repacked later.
+
+Extraction also writes `_bininfo.json` with the original internal names, so a folder extracted with extensions can still be repacked with the right names. It is never packed.
 
 #### Pack files into a BIN archive
 
@@ -157,18 +191,35 @@ python fvp_tools.py hcb-strings Hoshimemo_HD.hcb strings.txt
 #### Rebuild HCB with modified strings
 
 ```bash
-python fvp_tools.py hcb-rebuild <original.hcb> <strings.txt> <output.hcb>
+python fvp_tools.py hcb-rebuild <original.hcb> <strings.txt> <output.hcb> [--charmap <map.txt>] [--fixed]
 ```
 
 **Example:**
 ```bash
-python fvp_tools.py hcb-rebuild Hoshimemo_HD.hcb translated_strings.txt Hoshimemo_HD_new.hcb
+python fvp_tools.py hcb-rebuild Hoshimemo_HD.hcb translated_strings.txt Hoshimemo_HD_new.hcb --charmap charmap_es.txt
 ```
 
-**Important limitations:**
-- Replacement strings must fit within original string length (padded with spaces if shorter, truncated if longer)
+**How longer lines work:** `call`, `jmp` and `jmpcond` use absolute addresses, so a string that grows shifts every instruction after it. The rebuild writes each string at its real length and then relocates every reference into the code: jumps, calls, function pointers passed to `ThreadStart` (and other functions), and the entry point stored in the data section. If a reference cannot be relocated safely, the rebuild stops with an error instead of writing a broken script.
+
+`--fixed` restores the old behavior (every string keeps its original size: padded with spaces if shorter, cut if longer), in case a game does not accept a relocated script.
+
+**Limitations:**
+- Each string can hold up to **254 bytes** (its length is stored in 1 byte): 254 half-width characters or 127 full-width ones. Longer strings are cut at a character boundary and listed in the report
 - Only **Shift-JIS (CP932)** encoding is supported by the game engine
-- Characters not in Shift-JIS (ñ, á, ü, emojis, etc.) will cause the string to be skipped
+- Characters not in Shift-JIS (ñ, á, ü, emojis, etc.) keep the original line unless a character table maps them (see below)
+- Saved games may store addresses of script functions; old saves may not work with a rebuilt script
+
+#### Character table (custom fonts)
+
+If your game uses a custom font that draws some Shift-JIS characters (for example half-width katakana) as `á`, `ñ`, `¿`..., write the translation normally and pass a table with `--charmap`. One pair per line, `#` for comments:
+
+```
+á=ｱ
+ñ=ｶ
+¿=ｸ
+```
+
+When rebuilding, every `á` is written as `ｱ`. To read an already translated script, extract it with `--charmap <map.txt> --reverse`. This is off by default because the original Japanese text uses those same characters.
 
 #### Strings file format
 
@@ -380,15 +431,19 @@ HCB files contain the compiled bytecode for the game's script, including:
 
 ```
 +----------------------------------+
-| Entry Point (4 bytes, U32LE)     |
+| Header (4 bytes, U32LE)          |
 |   Offset to data section         |
 +----------------------------------+
 | Code Section                     |
 |   Bytecode instructions          |
 |   Inline strings (opcode 0x0E)   |
 +----------------------------------+
-| Data Section                     |
-|   Additional game data           |
+| Data Section (sysdesc)           |
+|   Entry point (U32LE, address of |
+|   the main function)             |
+|   Global variable counts         |
+|   Game title                     |
+|   Syscall table                  |
 +----------------------------------+
 ```
 
@@ -472,10 +527,10 @@ python fvp_tools.py hcb-rebuild script.hcb strings.txt script_translated.hcb
 ```
 
 **Tips for translation:**
-- Strings are padded or truncated to match original length
-- Use shorter translations when possible
+- Translations can be longer than the original, up to 254 bytes per line; check the rebuild report for cut lines
+- Only translate dialogue and names: many strings are file names or engine commands and must stay unchanged
 - The `~` character creates line breaks in dialogue
-- Test frequently in-game to catch truncation issues
+- Test frequently in-game: the text box itself may not fit very long lines
 
 ### Supported Games
 
