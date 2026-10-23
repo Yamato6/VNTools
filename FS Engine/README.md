@@ -4,22 +4,54 @@ A Python tool for extracting and repacking `.PD` archive files used by the **FS 
 
 ## Features
 
-- **Extract** all files from `.PD` archives
-- **Repack** files into new `.PD` archives
-- Supports both `PackOnly` and `PackPlus` formats
+- **Graphical interface** (CustomTkinter) and command line
+- **List** the contents of a `.PD` archive and extract all files or only a selection
+- **Repack** files into new `.PD` archives, keeping the original mode and file order
+- Supports both `PackOnly` and `PackPlus` formats, with automatic mode detection
 - Automatic XOR decryption/encryption for `PackPlus` archives
-- Preserves original file structure
+- Preserves original file structure, including subfolders
+
+## Files
+
+| File | Description |
+|------|-------------|
+| `pd_core.py` | `.PD` format logic (shared by the CLI and the GUI) |
+| `crosschannel_tool.py` | Command line tool (opens the GUI when run without arguments) |
+| `crosschannel_gui.py` | Graphical interface |
+| `build_exe.bat` | Builds a standalone `.exe` with PyInstaller |
 
 ## Requirements
 
-- Python 3.6 or higher
-- No external dependencies required
+- Python 3.8 or higher
+- Command line: no external dependencies
+- GUI: `customtkinter` (`pip install -r requirements.txt`)
 
-## Installation
+## Graphical Interface
 
-Simply download `crosschannel_tool.py` to your desired directory.
+```bash
+python crosschannel_gui.py
+```
+
+- **Extraer** tab: open a `.PD`, browse/filter its file list, and extract everything or only the selected files.
+- **Empaquetar** tab: pick a folder and an output `.PD`. In `Auto` mode the archive mode is taken from `_pdinfo.json`.
+- Progress bar with a **Cancelar** button; cancelling never leaves a half-written `.PD` behind (an existing file is kept intact).
+
+### Standalone executable
+
+```bash
+pip install -r requirements.txt
+build_exe.bat
+```
+
+The result is `dist\CrossChannel_MultiTool_GUI.exe`, which runs without Python installed.
 
 ## Usage
+
+### List Files
+
+```bash
+python crosschannel_tool.py list <archive.PD>
+```
 
 ### Extract Files
 
@@ -32,20 +64,20 @@ python crosschannel_tool.py extract <archive.PD> <output_directory>
 python crosschannel_tool.py extract cg.pd output_cg
 ```
 
-This will extract all files from `cg.pd` into the `output_cg` folder.
+This will extract all files from `cg.pd` into the `output_cg` folder, plus a `_pdinfo.json` file that records the archive mode and original file order.
 
 ### Repack Files
 
 ```bash
-python crosschannel_tool.py pack <input_directory> <output.PD> <PackOnly|PackPlus>
+python crosschannel_tool.py pack <input_directory> <output.PD> [PackOnly|PackPlus]
 ```
 
 **Example:**
 ```bash
-python crosschannel_tool.py pack output_cg new_cg.pd PackPlus
+python crosschannel_tool.py pack output_cg new_cg.pd
 ```
 
-This will create a new `new_cg.pd` archive from all files in the `output_cg` folder.
+This will create a new `new_cg.pd` archive from all files in the `output_cg` folder (subfolders included). If the mode is omitted, it is read from `_pdinfo.json`, falling back to `PackPlus`. Files listed in `_pdinfo.json` keep their original order; new files are appended alphabetically. `_pdinfo.json` itself is never packed.
 
 ## Archive Modes
 
