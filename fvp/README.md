@@ -561,7 +561,7 @@ The HCB tool has been tested with:
 
 ## License
 
-This tool is provided for personal and educational use. Please respect the copyrights of the original game content.
+Released under the [MIT License](../LICENSE). No game data or fonts are included; you need your own copy of the game. Please respect the copyrights of the original game content.
 
 ## Credits
 

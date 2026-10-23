@@ -144,7 +144,7 @@ python crosschannel_tool.py pack mod_cg cg.pd PackPlus
 
 ## License
 
-This tool is provided for educational and personal use. Please respect the original game developers and publishers.
+Released under the [MIT License](../LICENSE). No game data is included; you need your own copy of the game. Please respect the original game developers and publishers.
 
 ## Credits
 

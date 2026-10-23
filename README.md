@@ -19,6 +19,7 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 - Extract the script text from `.hcb` files and rebuild them with your translation
 - **Translated lines can be longer than the original.** The rebuild relocates every jump, call and function pointer in the script, so a line can grow up to the format limit of 254 bytes
 - Character table for custom fonts (write `canción`, the game gets the characters your font draws as `ó`)
+- Generate that custom font from any TrueType font and the same character table (`font-patch`)
 - Rebuild report listing lines that grew, were cut or had characters replaced
 
 ## Quick start
@@ -60,6 +61,7 @@ VNTools/
     ├── fvp_bin.py          .bin archives
     ├── fvp_nvsg.py         NVSG images
     ├── fvp_hcb.py          HCB scripts
+    ├── fvp_font.py         custom font generation
     ├── fvp_common.py       shared helpers
     ├── fvp_tools.py        command line
     ├── fvp_gui.py          graphical interface
@@ -71,6 +73,10 @@ VNTools/
 
 - HCB format research: binaryfail, akerou (original C++ tool)
 
+## License
+
+The code in this repository is released under the [MIT License](LICENSE).
+
 ## Disclaimer
 
-These tools are provided for personal and educational use. They do not include any game data: you need your own copy of the games. Please respect the copyrights of the original developers and publishers.
+These tools do not include any game data, fonts or copyrighted assets: you need your own legally obtained copy of the games. Game names and trademarks belong to their respective owners, and this project is not affiliated with or endorsed by them. Please respect the copyrights of the original developers and publishers, and only distribute translation patches, never the game files themselves.
