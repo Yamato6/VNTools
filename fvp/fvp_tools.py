@@ -124,6 +124,16 @@ def hcb_merge_strings(build_script_path: str, output_path: str):
     return count
 
 
+def font_patch(base_font: str, charmap_path: str, output_font: str, family=None):
+    import fvp_font
+    changes = fvp_font.patch_font(base_font, charmap_path, output_font, family)
+    for src, dst, glyph in changes:
+        print(f"  {dst} (U+{ord(dst):04X}) -> {src} [{glyph}]")
+    print(f"Font created: {output_font} ({len(changes)} characters)")
+    if family:
+        print(f"  Font name: {family}")
+
+
 def bin_list(bin_path: str):
     entries = fvp_bin.read_index(bin_path)
     print(f"{bin_path}: {len(entries)} files")
@@ -162,6 +172,9 @@ Usage:
     python fvp_tools.py hcb-rebuild <original.hcb> <strings.txt> <output.hcb> [--charmap <map.txt>] [--fixed]
     python fvp_tools.py hcb-split <strings.txt>
     python fvp_tools.py hcb-merge <build_script.txt> <output_strings.txt>
+
+  Custom Font:
+    python fvp_tools.py font-patch <base.ttf> <charmap.txt> <output.ttf> [--name "New Name"]
 
 Options:
   --no-ext    Do not add automatic extension (for NVSG files)
@@ -250,6 +263,9 @@ def main():
 
         elif cmd == 'hcb-merge' and len(args) >= 3:
             hcb_merge_strings(args[1], args[2])
+
+        elif cmd == 'font-patch' and len(args) >= 4:
+            font_patch(args[1], args[2], args[3], get_option(args, '--name'))
 
         else:
             print_usage()

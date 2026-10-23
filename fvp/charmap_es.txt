@@ -1,0 +1,28 @@
+# Tabla de caracteres para la fuente personalizada (mapeo de GrisaiaCustom)
+#
+# Formato: original=reemplazo   (una pareja por línea)
+#
+# - Al reconstruir el HCB (hcb-rebuild --charmap), cada carácter "original"
+#   se escribe como "reemplazo".
+# - Al generar la fuente (font-patch), cada "reemplazo" se dibuja con el glyph
+#   del carácter "original" de la fuente base.
+#
+# Los reemplazos son katakana de ancho simple: ocupan 1 byte en Shift-JIS.
+# Los katakana de ancho completo (ア, イ, ウ...) no se tocan.
+
+á=ｧ
+í=ｨ
+ú=ｩ
+é=ｪ
+ó=ｫ
+ü=ｯ
+Á=ｱ
+Í=ｲ
+Ú=ｳ
+É=ｴ
+Ó=ｵ
+¡=ｷ
+Ü=ﾂ
+ñ=ﾃ
+Ñ=ﾆ
+¿=ﾚ

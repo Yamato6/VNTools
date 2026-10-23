@@ -10,5 +10,7 @@ dist/
 # Temporary files written while packing
 *.tmp
 
-# Local game files used for testing (never commit game data)
+# Local game files used for testing and translation work (never commit game data)
 Pruebas/
+Traduccion/
+*.hcb

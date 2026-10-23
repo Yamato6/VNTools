@@ -221,6 +221,24 @@ If your game uses a custom font that draws some Shift-JIS characters (for exampl
 
 When rebuilding, every `á` is written as `ｱ`. To read an already translated script, extract it with `--charmap <map.txt> --reverse`. This is off by default because the original Japanese text uses those same characters.
 
+`charmap_es.txt` contains the Spanish mapping (16 half-width katakana: `á=ｧ`, `ñ=ﾃ`, `¿=ﾚ`...).
+
+#### Generating the custom font
+
+The same table generates the font, so the script and the font always agree. `font-patch` copies a base font and makes every replacement character use the glyph of its original character from that same font, so accented text keeps the style and width of the rest of the text:
+
+```bash
+python fvp_tools.py font-patch mplus-1c-regular.ttf charmap_es.txt output/mplus-1c-regular.ttf
+```
+
+Full-width katakana are not modified.
+
+By default the font keeps its internal name (for M+: `M+ 1c`). If the original font is also installed system-wide, Windows keeps using the original one, so it's better to give the new font its own name with `--name` and change the font name the script looks for (in Hoshizora no Memoria HD it is the string `M+ 1c`, found by `hcb-strings`):
+
+```bash
+python fvp_tools.py font-patch mplus-1c-regular.ttf charmap_es.txt mplus-1c-es.ttf --name "M+ 1c ES"
+```
+
 #### Strings file format
 
 ```
