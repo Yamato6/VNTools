@@ -7,6 +7,7 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 | [**CrossChannel MultiTool**](fs-engine/) | FS Engine | CROSS†CHANNEL | `.pd` archives |
 | [**FVP Tools**](fvp/) | Favorite View Point System | Hoshizora no Memoria, Irotoridori no Sekai, Astral Air… | `.bin` archives, `.nvsg` images, `.hcb` scripts |
 | [**Yeti Tools**](yeti-engine/) | Yeti/Regista | CROSS†CHANNEL -Final Complete- (PC) | `.cpk` archives, `.xtx` textures |
+| [**AdvHD Tools**](advhd-engine/) | AdvHD (WillPlus) | CROSS†CHANNEL (WillPlus edition, 2012) | `.arc` archives, WIPF images |
 
 ## Features
 
@@ -29,15 +30,21 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 - Parallel extraction at low priority that can be cancelled and resumed
 - Convert loose `.xtx` textures such as the game font, optionally one image per channel
 
+**AdvHD Tools** (`advhd-engine/`)
+- Browse a `.arc` archive and extract everything or only the files you select, filtering by name or type
+- Extract every image of the game as PNG with transparency, combining each image with its opacity mask
+- Decode the engine's WIPF images, including animations with up to 92 frames
+- Parallel extraction at low priority that can be cancelled and resumed
+
 ## Quick start
 
 Requires Python 3.8 or newer.
 
 ```bash
 git clone https://github.com/Yamato6/VNTools.git
-cd VNTools/fvp                 # or fs-engine, yeti-engine
+cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine
 pip install -r requirements.txt
-python fvp_gui.py              # or: python crosschannel_gui.py, python yeti_gui.py
+python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py
 ```
 
 Running the command line tool without arguments also opens the GUI:
@@ -51,6 +58,7 @@ See each tool's README for every command and the file format documentation:
 - [fs-engine/README.md](fs-engine/README.md)
 - [fvp/README.md](fvp/README.md)
 - [yeti-engine/README.md](yeti-engine/README.md)
+- [advhd-engine/README.md](advhd-engine/README.md)
 
 ## Standalone executable
 
@@ -60,6 +68,14 @@ Each tool folder has a `build_exe.bat` that builds a single-file `.exe` with PyI
 
 ```
 VNTools/
+├── advhd-engine/         AdvHD Tools
+│   ├── advhd_arc.py        .arc archives
+│   ├── advhd_wipf.py       WIPF images and LZSS
+│   ├── advhd_extract.py    extraction logic
+│   ├── advhd_common.py     shared helpers
+│   ├── advhd_tool.py       command line
+│   ├── advhd_gui.py        graphical interface
+│   └── build_exe.bat
 ├── fs-engine/            CrossChannel MultiTool
 │   ├── pd_core.py          .pd format logic
 │   ├── crosschannel_tool.py  command line
@@ -91,6 +107,7 @@ VNTools/
 ## Credits
 
 - HCB format research: binaryfail, akerou (original C++ tool)
+- WillPlus format reference: [vn-tools/arc_unpacker](https://github.com/vn-tools/arc_unpacker)
 - CPK and Yeti format references: see [yeti-engine/README.md](yeti-engine/README.md#credits)
 
 ## License
