@@ -7,7 +7,7 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 | [**CrossChannel MultiTool**](fs-engine/) | FS Engine | CROSS†CHANNEL | `.pd` archives |
 | [**FVP Tools**](fvp/) | Favorite View Point System | Hoshizora no Memoria, Irotoridori no Sekai, Astral Air… | `.bin` archives, `.nvsg` images, `.hcb` scripts |
 | [**Yeti Tools**](yeti-engine/) | Yeti/Regista | CROSS†CHANNEL -Final Complete- (PC) | `.cpk` archives, `.xtx` textures |
-| [**AdvHD Tools**](advhd-engine/) | AdvHD (WillPlus) | CROSS†CHANNEL (WillPlus edition, 2012) | `.arc` archives, WIPF images |
+| [**AdvHD Tools**](advhd-engine/) | AdvHD (WillPlus) | CROSS†CHANNEL (WillPlus edition, 2012) | `.arc` archives, WIPF images, `.wsc` scripts, audio |
 
 ## Features
 
@@ -31,9 +31,10 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 - Convert loose `.xtx` textures such as the game font, optionally one image per channel
 
 **AdvHD Tools** (`advhd-engine/`)
-- Browse a `.arc` archive and extract everything or only the files you select, filtering by name or type
-- Extract every image of the game as PNG with transparency, combining each image with its opacity mask
-- Decode the engine's WIPF images, including animations with up to 92 frames
+- Browse a `.arc` archive, extract everything or only the files you select, and pack a folder back into a `.arc`
+- Extract every image of the game as PNG with transparency, combining each image with its opacity mask, and **repack the edited images** (only the changed ones are re-encoded)
+- Extract the script text and rebuild it with your translation. **Translated lines can be longer than the original**: every jump and conditional block is relocated
+- Extract the music, sound effects and voices as `.ogg`
 - Parallel extraction at low priority that can be cancelled and resumed
 
 ## Quick start
@@ -71,7 +72,8 @@ VNTools/
 ├── advhd-engine/         AdvHD Tools
 │   ├── advhd_arc.py        .arc archives
 │   ├── advhd_wipf.py       WIPF images and LZSS
-│   ├── advhd_extract.py    extraction logic
+│   ├── advhd_wsc.py        WSC scripts
+│   ├── advhd_extract.py    image and audio extraction, image repacking
 │   ├── advhd_common.py     shared helpers
 │   ├── advhd_tool.py       command line
 │   ├── advhd_gui.py        graphical interface

@@ -1,11 +1,14 @@
 # AdvHD Tools
 
-Tools for extracting the images of **CROSS†CHANNEL** (WillPlus edition, 2012), which runs on the **AdvHD** engine by WillPlus. This is a different release from *CROSS†CHANNEL -Final Complete-*, which is handled by [Yeti Tools](../yeti-engine/).
+Tools for translating **CROSS†CHANNEL** (WillPlus edition, 2012), which runs on the **AdvHD** engine by WillPlus: extract and rebuild the scripts, extract and repack the images, extract the audio and repack any `.arc` archive. This is a different release from *CROSS†CHANNEL -Final Complete-*, which is handled by [Yeti Tools](../yeti-engine/).
 
 ## Features
 
 - **Graphical interface** (CustomTkinter) and command line
-- **List** the contents of a `.arc` archive and extract its files as they are
+- **List** the contents of a `.arc` archive, extract its files as they are and **pack** a folder back into a `.arc` (byte-identical when nothing changed)
+- **Scripts**: extract the text of the 324 scripts (`Rio.arc`) for translation and rebuild them. **Translated lines can be longer than the original**: every jump and conditional block in the scripts is relocated
+- **Repack images**: edit the extracted PNG files and build a new `.arc`. Only the edited images are re-encoded (PNG + mask, WIPF), the rest is copied unchanged
+- **Audio**: extract the music, sound effects and voices as `.ogg`
 - **Extract every image** of the game as PNG in one step. Images and their opacity masks (`MSK`) are combined into PNG files **with transparency**
 - Decodes the engine's own **WIPF** images (`WIP`, `MSK`, `MOS`), including animations and button states with up to 92 frames
 - **Fast**: the whole game (about 1,600 images) takes under 20 seconds. Files are processed in parallel at low priority, so the PC stays responsive
@@ -16,8 +19,9 @@ Tools for extracting the images of **CROSS†CHANNEL** (WillPlus edition, 2012),
 | File | Description |
 |------|-------------|
 | `advhd_arc.py` | `.arc` archives |
-| `advhd_wipf.py` | WIPF images and their LZSS compression |
-| `advhd_extract.py` | Extraction logic (shared by the CLI and the GUI) |
+| `advhd_wipf.py` | WIPF images and their LZSS compression (decoding and encoding) |
+| `advhd_wsc.py` | WSC scripts: text extraction and rebuilding |
+| `advhd_extract.py` | Image and audio extraction and image repacking (shared by the CLI and the GUI) |
 | `advhd_tool.py` | Command line tool (opens the GUI when run without arguments) |
 | `advhd_gui.py` | Graphical interface |
 | `build_exe.bat` | Builds a standalone `.exe` with PyInstaller |
@@ -39,7 +43,10 @@ python advhd_gui.py
 ```
 
 - **Imágenes**: pick the game folder (or a single `.arc`) and an output folder, then extract every image, with a live preview over a checkerboard to show transparency.
-- **Archivos ARC**: open a `.arc`, filter its files by name or type and extract all of them or only the selected ones.
+- **Reempaquetar**: pick the original `.arc`, the folder with the extracted (and edited) images and the output `.arc`.
+- **Guiones**: extract the text of `Rio.arc` (one file per script) and rebuild it with your translation, with a report of the lines that grew, were cut or could not be encoded.
+- **Audio**: extract `Bgm.arc`, `Se.arc` and `Voice.arc` as `.ogg`.
+- **Archivos ARC**: open a `.arc`, filter its files by name or type and extract all of them or only the selected ones. "Empaquetar carpeta…" packs a folder back into a `.arc`.
 
 The default output folder is next to the game folder, never inside it: the tools only read the game files.
 
@@ -101,6 +108,71 @@ python advhd_tool.py images "D:\Games\CROSS†CHANNEL" png --resume
 
 `Rio.arc` (scripts only) is skipped. If a mask does not match its image, or is fully transparent (`CHATWND`), the image is saved opaque, the mask is saved separately and a warning is shown.
 
+### Repack images
+
+```bash
+python advhd_tool.py images-pack <original.arc> <images_folder> <output.arc> [--allow-resize]
+```
+
+`images_folder` is the output of `images` (or the folder of that `.arc` inside it). Extraction writes `_images.json` with a hash of every PNG, so only the images you edited are re-encoded:
+
+- `NAME.png` with transparency → the `PNG` entry (RGB) and its `MSK` mask (alpha)
+- Frames `NAME_000.png`… → the `WIP` image with all its frames, keeping each frame's position
+- `NAME_msk.png`, `NAME_mos.png` → the `MSK` or `MOS` entry
+
+Images must keep their original size unless `--allow-resize` is given. If any image cannot be encoded, no file is written and the errors are listed.
+
+**Example:**
+```bash
+python advhd_tool.py images "D:\Games\CROSS†CHANNEL" png
+# edit png\Chip_T\TBYM0000.png…
+python advhd_tool.py images-pack Chip_T.arc png Chip_T_new.arc
+```
+
+### Pack a folder
+
+```bash
+python advhd_tool.py pack <folder> <output.arc>
+```
+
+Packs every `NAME.ext` file of a folder (for example one extracted with `extract` or `audio`). Types and names are sorted the same way as in the game's archives, so an unchanged folder gives an identical `.arc`. Names can be up to 12 bytes in Shift-JIS.
+
+### Audio
+
+```bash
+python advhd_tool.py audio <game_folder> <output_folder>
+```
+
+Copies the `.ogg` files of `Bgm.arc`, `Se.arc` and `Voice.arc` to `<output>\<arc>\`.
+
+### Scripts
+
+```bash
+python advhd_tool.py wsc-strings <Rio.arc> <text_folder> [--listing] [--charmap <map.txt> --reverse]
+python advhd_tool.py wsc-rebuild <Rio.arc> <text_folder> <new_Rio.arc> [--charmap <map.txt>] [--fixed]
+```
+
+`wsc-strings` writes one file per script (`CCA0001.txt`…) with the messages, character names, choices and scene titles:
+
+```
+# título
+0000|0x00000005|CROSS†CHANNEL
+0001|0x000000B4|最古の記憶は。%K%P
+…
+# nombre
+0013|0x00000356|少女
+0014|0x0000035B|「……太一」%K%P
+```
+
+Translate only the text after the second `|`. Keep the control codes: `%K%P` waits for a click and ends the message, and `{漢字:よみ}` is ruby (reading) text. `--listing` also writes the full disassembly of every script to `listado\`.
+
+`wsc-rebuild` takes the original `Rio.arc` and the folder with the translated files (scripts without a file are copied unchanged):
+
+- **Longer lines:** each text is written at its real length, then every absolute jump (`0x06`) and every conditional block size (`0x01`) is relocated. Rebuilding with unchanged text gives an identical `Rio.arc`
+- `--fixed`: every text keeps its original size (padded with spaces or cut), in case the game does not accept a relocated script
+- Only **Shift-JIS (CP932)** text is supported. Characters outside it (ñ, á, ¿…) keep the original line and are listed in the report, unless a character table maps them (`--charmap`, one `á=ｱ` pair per line, same format as FVP Tools) to characters a custom font draws as them
+- Saved games store positions in the scripts; old saves may not work with rebuilt scripts
+
 ## Game Files
 
 | File | Contents | Entries |
@@ -151,6 +223,21 @@ for each frame, in order:
 - **24 bits**: **planar**: the whole B plane, then G, then R
 - **Frames**: the first is usually the full image; the others are placed at their `x, y` over it (button states, for example)
 
+### WSC script
+
+Every byte is rotated 2 bits to the left (decrypt by rotating right). Decrypted, a script is a sequence of instructions: a 1-byte opcode and its arguments (little-endian), ending with `0xFF` and a 9-byte trailer.
+
+| Opcode | Arguments | Meaning |
+|--------|-----------|---------|
+| `0x41` | u16 id, u8, u8, text | Message |
+| `0x42` | u16 id, u8, u8, u8, name, text | Message with a character name |
+| `0x02` | u16 count, count × (u16 id, text, 11 bytes) | Choice menu |
+| `0xE0` | text | Scene title |
+| `0x06` | u32 target, u8 | Jump to an absolute offset |
+| `0x01` | u8, u16, u16, u32 size, u8 | Condition: skips the next `size` bytes |
+
+Texts are Shift-JIS and null-terminated. The tool knows the argument layout of all 60 opcodes used by the game, worked out from the 324 scripts: every script is parsed from start to end with no bytes left over, and every jump and block ends at the start of an instruction.
+
 ## License
 
 Released under the [MIT License](../LICENSE). No game data is included; you need your own copy of the game. Please respect the original game developers and publishers.
@@ -158,3 +245,4 @@ Released under the [MIT License](../LICENSE). No game data is included; you need
 ## Credits
 
 - [vn-tools/arc_unpacker](https://github.com/vn-tools/arc_unpacker): reference for the WillPlus formats
+- The WSC opcode table was worked out from the game's own scripts

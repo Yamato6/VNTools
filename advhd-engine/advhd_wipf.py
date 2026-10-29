@@ -85,6 +85,106 @@ def lzss(src: bytes, out_len: int) -> bytes:
     return bytes(out)
 
 
+LZSS_WINDOW = 0x1000
+LZSS_MIN = 2
+LZSS_MAX = 17
+LZSS_CHAIN = 16             # candidatos que se prueban por posición
+
+
+def lzss_compress(data: bytes) -> bytes:
+    """
+    Inverso de lzss(). Busca coincidencias en los últimos 4095 bytes: el byte k de la
+    salida está en la posición (k + 1) & 0xFFF de la ventana. Las coincidencias pueden
+    solaparse con lo que se está escribiendo (se copia byte a byte).
+    """
+    n = len(data)
+    out = bytearray()
+    heads = {}              # 2 bytes -> posiciones recientes (la última al final)
+    i = 0
+    while i < n:
+        flag_pos = len(out)
+        out.append(0)
+        flags = 0
+        for bit in range(8):
+            if i >= n:
+                break
+            best_len = 0
+            best_pos = 0
+            if i + 1 < n:
+                key = data[i:i + 2]
+                limit = min(LZSS_MAX, n - i)
+                # Repetición del byte anterior: caso muy frecuente en las máscaras
+                if i > 0 and data[i - 1] == data[i]:
+                    k = 0
+                    c = data[i]
+                    while k < limit and data[i + k] == c:
+                        k += 1
+                    best_len, best_pos = k, i - 1
+                for j in reversed(heads.get(key, ())):
+                    if i - j >= LZSS_WINDOW:
+                        break
+                    if best_len == limit:
+                        break
+                    k = 2
+                    while k < limit and data[j + k] == data[i + k]:
+                        k += 1
+                    if k > best_len:
+                        best_len, best_pos = k, j
+            if best_len >= LZSS_MIN:
+                off = (best_pos + 1) & 0xFFF
+                out.append(off >> 4)
+                out.append(((off & 0x0F) << 4) | (best_len - 2))
+                step = best_len
+            else:
+                flags |= 1 << bit
+                out.append(data[i])
+                step = 1
+            for p in range(i, min(i + step, n - 1)):
+                chain = heads.setdefault(data[p:p + 2], [])
+                chain.append(p)
+                if len(chain) > LZSS_CHAIN:
+                    del chain[0]
+            i += step
+        out[flag_pos] = flags
+    return bytes(out)
+
+
+def write_wipf(frames: List[Frame]) -> bytes:
+    """Escribe una imagen WIPF. Todos los fotogramas deben tener el mismo bpp."""
+    bpp = frames[0].bpp
+    head = bytearray(WIPF_MAGIC + struct.pack('<HH', len(frames), bpp))
+    body = bytearray()
+    for fr in frames:
+        if fr.bpp != bpp or len(fr.data) != fr.width * fr.height * (bpp // 8):
+            raise ValueError("Fotograma con datos de tamaño incorrecto")
+        packed = lzss_compress(fr.data)
+        head += struct.pack('<6I', fr.width, fr.height, fr.x, fr.y, fr.unknown, len(packed))
+        if bpp == 8:
+            body += fr.palette
+        body += packed
+    return bytes(head + body)
+
+
+def image_to_planes(img: Image.Image) -> bytes:
+    """RGB -> datos de 24 bits planar (plano B, luego G, luego R)."""
+    r, g, b = img.convert('RGB').split()
+    return b.tobytes() + g.tobytes() + r.tobytes()
+
+
+def gray_to_indices(img: Image.Image, palette: bytes) -> bytes:
+    """
+    Escala de grises (alfa o máscara) -> índices de la paleta original. Con la rampa
+    0..255 el valor ya es el índice; si no, se usa la entrada de paleta más cercana.
+    """
+    gray = img.convert('L')
+    rgb = _palette_rgb(palette)
+    if rgb == GRAY_RAMP:
+        return gray.tobytes()
+    levels = np.frombuffer(rgb[0::3], dtype=np.uint8).astype(np.int16)
+    lut = np.abs(np.arange(256, dtype=np.int16)[:, None] - levels[None, :]).argmin(axis=1)
+    return gray.point(lut.astype(np.uint8).tolist()).tobytes()
+
+
 def read_wipf(data: bytes) -> List[Frame]:
     if not is_wipf(data):
         raise ValueError("No es una imagen WIPF")

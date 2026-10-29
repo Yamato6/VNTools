@@ -18,7 +18,8 @@ import customtkinter as ctk
 from PIL import Image
 
 import advhd_extract
-from advhd_arc import read_index
+import advhd_wsc
+from advhd_arc import pack, read_index
 from advhd_common import Cancelled
 
 APP_TITLE = "AdvHD Tools"
@@ -90,8 +91,153 @@ class App(ctk.CTk):
         self.tabs = ctk.CTkTabview(self)
         self.tabs.grid(row=0, column=0, sticky="nsew", padx=12, pady=(6, 0))
         self._build_images_tab(self.tabs.add("Imágenes"))
+        self._build_repack_tab(self.tabs.add("Reempaquetar"))
+        self._build_scripts_tab(self.tabs.add("Guiones"))
+        self._build_audio_tab(self.tabs.add("Audio"))
         self._build_arc_tab(self.tabs.add("Archivos ARC"))
         self._build_status_bar()
+
+    def _path_row(self, tab, row, label, var, command, button="Elegir…"):
+        """Fila etiqueta + campo + botón."""
+        ctk.CTkLabel(tab, text=label).grid(row=row, column=0, sticky="w", padx=(4, 8), pady=6)
+        ctk.CTkEntry(tab, textvariable=var).grid(row=row, column=1, sticky="ew", pady=6)
+        btn = ctk.CTkButton(tab, text=button, width=120, command=command)
+        btn.grid(row=row, column=2, padx=(8, 4), pady=6)
+        self.busy_widgets.append(btn)
+
+    def _note(self, tab, row, text):
+        ctk.CTkLabel(tab, text=text, justify="left", anchor="w", text_color=("gray35", "gray65")) \
+            .grid(row=row, column=1, columnspan=2, sticky="ew", pady=(0, 6))
+
+    def _build_repack_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        self.rp_arc_var = tk.StringVar()
+        self.rp_dir_var = tk.StringVar()
+        self.rp_out_var = tk.StringVar()
+        self._path_row(tab, 0, ".arc original:", self.rp_arc_var,
+                       lambda: self._ask_open(self.rp_arc_var, "Archivo .arc original", self._rp_defaults))
+        self._path_row(tab, 1, "Carpeta de imágenes:", self.rp_dir_var,
+                       lambda: self._ask_dir(self.rp_dir_var, "Carpeta con las imágenes extraídas"))
+        self._note(tab, 2, "La carpeta de la extracción (o la de ese .arc dentro de ella). Solo se "
+                           "vuelven a codificar\nlas imágenes que editaste; el resto se copia del original.")
+        self._path_row(tab, 3, ".arc de salida:", self.rp_out_var,
+                       lambda: self._ask_save(self.rp_out_var, "Guardar .arc"), "Guardar como…")
+        self.resize_var = tk.BooleanVar(value=False)
+        cb = ctk.CTkCheckBox(tab, text="Permitir imágenes con otro tamaño que el original",
+                             variable=self.resize_var)
+        cb.grid(row=4, column=1, sticky="w", pady=6)
+        btn = ctk.CTkButton(tab, text="Crear .arc", width=160, command=self.start_repack)
+        btn.grid(row=5, column=2, sticky="e", padx=4, pady=(18, 0))
+        self.busy_widgets += [cb, btn]
+
+    def _build_scripts_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        tab.grid_rowconfigure(8, weight=1)
+        self.rio_var = tk.StringVar()
+        self.txt_dir_var = tk.StringVar()
+        self.charmap_var = tk.StringVar()
+        self.rio_out_var = tk.StringVar()
+        self._path_row(tab, 0, "Rio.arc:", self.rio_var,
+                       lambda: self._ask_open(self.rio_var, "Archivo de guiones (Rio.arc)", self._rio_defaults))
+        self._path_row(tab, 1, "Carpeta de textos:", self.txt_dir_var,
+                       lambda: self._ask_dir(self.txt_dir_var, "Carpeta de textos"))
+        self._path_row(tab, 2, "Tabla de caracteres:", self.charmap_var,
+                       lambda: self._ask_open(self.charmap_var, "Tabla de caracteres (opcional)",
+                                              types=[("Texto", "*.txt"), ("Todos", "*.*")]))
+        self._note(tab, 3, "Opcional: para letras que no existen en Shift-JIS (ñ, á…) con una fuente propia.")
+
+        row = ctk.CTkFrame(tab, fg_color="transparent")
+        row.grid(row=4, column=1, columnspan=2, sticky="ew", pady=6)
+        self.listing_var = tk.BooleanVar(value=False)
+        cb = ctk.CTkCheckBox(row, text="Guardar también el listado completo de cada guion",
+                             variable=self.listing_var)
+        cb.pack(side="left")
+        btn = ctk.CTkButton(row, text="Extraer textos", width=140, command=self.start_wsc_strings)
+        btn.pack(side="right", padx=(8, 4))
+        self.busy_widgets += [cb, btn]
+
+        self._path_row(tab, 5, "Rio.arc de salida:", self.rio_out_var,
+                       lambda: self._ask_save(self.rio_out_var, "Guardar Rio.arc"), "Guardar como…")
+        row = ctk.CTkFrame(tab, fg_color="transparent")
+        row.grid(row=6, column=1, columnspan=2, sticky="ew", pady=6)
+        self.fixed_var = tk.BooleanVar(value=False)
+        cb = ctk.CTkCheckBox(row, text="Tamaño fijo (cada texto conserva su tamaño original)",
+                             variable=self.fixed_var)
+        cb.pack(side="left")
+        btn = ctk.CTkButton(row, text="Reconstruir", width=140, command=self.start_wsc_rebuild)
+        btn.pack(side="right", padx=(8, 4))
+        self.busy_widgets += [cb, btn]
+
+        self.wsc_report = ctk.CTkTextbox(tab, height=120, wrap="none")
+        self.wsc_report.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=4, pady=(8, 0))
+        self.wsc_report.configure(state="disabled")
+
+    def _build_audio_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        self.au_src_var = tk.StringVar()
+        self.au_out_var = tk.StringVar()
+        self._path_row(tab, 0, "Carpeta del juego:", self.au_src_var, self._au_browse)
+        self._path_row(tab, 1, "Destino:", self.au_out_var,
+                       lambda: self._ask_dir(self.au_out_var, "Carpeta de destino"))
+        self._note(tab, 2, "Copia los OGG de Bgm.arc, Se.arc y Voice.arc (casi 600 MB) en una carpeta por "
+                           "archivo.\nPara volver a crear un .arc de audio usa «Empaquetar carpeta…» en "
+                           "Archivos ARC.")
+        btn = ctk.CTkButton(tab, text="Extraer audio", width=160, command=self.start_audio)
+        btn.grid(row=3, column=2, sticky="e", padx=4, pady=(18, 0))
+        self.busy_widgets.append(btn)
+
+    # ------------------------------------------------- Diálogos comunes
+
+    def _ask_open(self, var, title, then=None, types=None):
+        path = filedialog.askopenfilename(title=title, filetypes=types or [("Archivos ARC", "*.arc"),
+                                                                           ("Todos", "*.*")])
+        if path:
+            var.set(path)
+            if then:
+                then(path)
+
+    def _ask_dir(self, var, title):
+        path = filedialog.askdirectory(title=title)
+        if path:
+            var.set(path)
+
+    def _ask_save(self, var, title):
+        initial = Path(var.get() or "nuevo.arc")
+        path = filedialog.asksaveasfilename(title=title, defaultextension=".arc",
+                                            initialdir=str(initial.parent) if initial.parent.exists() else None,
+                                            initialfile=initial.name,
+                                            filetypes=[("Archivos ARC", "*.arc"), ("Todos", "*.*")])
+        if path:
+            var.set(path)
+
+    def _confirm_overwrite(self, out_path, source) -> bool:
+        out, src = Path(out_path).resolve(), Path(source).resolve()
+        if out == src:
+            messagebox.showwarning(APP_TITLE, "La salida no puede ser el archivo original.")
+            return False
+        return not out.exists() or messagebox.askyesno(APP_TITLE, f"{out.name} ya existe.\n¿Sobrescribirlo?")
+
+    def _rp_defaults(self, path):
+        p = Path(path)
+        if not self.rp_out_var.get():
+            self.rp_out_var.set(str(p.parent.parent / f"{p.parent.name}_nuevo" / p.name))
+        if not self.rp_dir_var.get() and self.img_out_var.get():
+            self.rp_dir_var.set(self.img_out_var.get())
+
+    def _rio_defaults(self, path):
+        p = Path(path)
+        game = p.parent
+        if not self.txt_dir_var.get():
+            self.txt_dir_var.set(str(game.parent / f"{game.name}_textos"))
+        if not self.rio_out_var.get():
+            self.rio_out_var.set(str(game.parent / f"{game.name}_nuevo" / p.name))
+
+    def _au_browse(self):
+        path = filedialog.askdirectory(title="Carpeta del juego")
+        if path:
+            self.au_src_var.set(path)
+            if not self.au_out_var.get():
+                self.au_out_var.set(str(Path(path).parent / f"{Path(path).name}_audio"))
 
     def _build_images_tab(self, tab):
         tab.grid_columnconfigure(1, weight=1)
@@ -217,7 +363,10 @@ class App(ctk.CTk):
         btn_sel = ctk.CTkButton(actions, text="Extraer seleccionados",
                                 command=lambda: self.start_raw(True))
         btn_sel.pack(side="right", padx=8)
-        self.busy_widgets += [btn_all, btn_sel]
+        btn_pack = ctk.CTkButton(actions, text="Empaquetar carpeta…", fg_color="gray40",
+                                 hover_color="gray30", command=self.start_pack)
+        btn_pack.pack(side="right", padx=(0, 8))
+        self.busy_widgets += [btn_all, btn_sel, btn_pack]
 
         ctk.CTkLabel(tab, text="Los archivos se guardan tal cual (los WIP y MSK siguen en formato WIPF).",
                      anchor="w", text_color=("gray35", "gray65")) \
@@ -422,6 +571,133 @@ class App(ctk.CTk):
 
         self.run_task(advhd_extract.extract_raw, (arc_path, out_dir), {"names": names},
                       "Extrayendo", done)
+
+    def start_pack(self):
+        folder = filedialog.askdirectory(title="Carpeta con los archivos NOMBRE.ext a empaquetar")
+        if not folder:
+            return
+        out = filedialog.asksaveasfilename(title="Guardar .arc", defaultextension=".arc",
+                                           initialfile=f"{Path(folder).name}.arc",
+                                           filetypes=[("Archivos ARC", "*.arc"), ("Todos", "*.*")])
+        if not out:
+            return
+
+        def done(count):
+            if messagebox.askyesno(APP_TITLE, f"Paquete creado ({count} archivos):\n{out}\n\n"
+                                              "¿Abrir la carpeta?"):
+                open_folder(Path(out).parent)
+
+        self.run_task(pack, (folder, out), {}, "Empaquetando", done)
+
+    # ------------------------------------------------- Pestaña Reempaquetar
+
+    def start_repack(self):
+        arc, folder, out = (v.get().strip() for v in (self.rp_arc_var, self.rp_dir_var, self.rp_out_var))
+        if not arc or not Path(arc).is_file():
+            messagebox.showwarning(APP_TITLE, "Elige el .arc original.")
+            return
+        if not folder or not Path(folder).is_dir():
+            messagebox.showwarning(APP_TITLE, "Elige la carpeta con las imágenes extraídas.")
+            return
+        if not out or not self._confirm_overwrite(out, arc):
+            return
+
+        def done(r):
+            if r.errors:
+                messagebox.showerror(APP_TITLE, "No se creó el archivo. Errores:\n\n" +
+                                     "\n".join(r.errors[:15]))
+                return
+            changed = "\n".join(r.changed[:15]) + ("\n…" if len(r.changed) > 15 else "")
+            if messagebox.askyesno(APP_TITLE, f"{len(r.changed)} de {r.entries} archivos reemplazados"
+                                              f"{':' if r.changed else '.'}\n{changed}\n\n{out}\n\n"
+                                              "¿Abrir la carpeta?"):
+                open_folder(Path(out).parent)
+
+        self.run_task(advhd_extract.pack_images, (arc, folder, out),
+                      {"allow_resize": self.resize_var.get()}, "Reempaquetando", done)
+
+    # ---------------------------------------------------- Pestaña Guiones
+
+    def _load_charmap(self):
+        path = self.charmap_var.get().strip()
+        return advhd_wsc.CharMap.load(path) if path else None
+
+    def _show_report(self, text):
+        self.wsc_report.configure(state="normal")
+        self.wsc_report.delete("1.0", "end")
+        self.wsc_report.insert("1.0", text)
+        self.wsc_report.configure(state="disabled")
+
+    def start_wsc_strings(self):
+        rio, folder = self.rio_var.get().strip(), self.txt_dir_var.get().strip()
+        if not rio or not Path(rio).is_file():
+            messagebox.showwarning(APP_TITLE, "Elige Rio.arc.")
+            return
+        if not folder:
+            messagebox.showwarning(APP_TITLE, "Elige la carpeta de textos.")
+            return
+        try:
+            charmap = self._load_charmap()
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, str(e))
+            return
+
+        def done(result):
+            files, strings = result
+            self._show_report(f"{strings} textos de {files} guiones en {folder}\n"
+                              "Un archivo por guion: ID|DIRECCIÓN|TEXTO. Traduce solo el texto.")
+            if messagebox.askyesno(APP_TITLE, f"{strings} textos de {files} guiones.\n\n¿Abrir la carpeta?"):
+                open_folder(folder)
+
+        self.run_task(advhd_wsc.extract_strings, (rio, folder),
+                      {"charmap": charmap, "with_listing": self.listing_var.get()},
+                      "Extrayendo textos", done)
+
+    def start_wsc_rebuild(self):
+        rio, folder, out = (v.get().strip() for v in (self.rio_var, self.txt_dir_var, self.rio_out_var))
+        if not rio or not Path(rio).is_file():
+            messagebox.showwarning(APP_TITLE, "Elige Rio.arc.")
+            return
+        if not folder or not Path(folder).is_dir():
+            messagebox.showwarning(APP_TITLE, "Elige la carpeta de textos.")
+            return
+        if not out or not self._confirm_overwrite(out, rio):
+            return
+        try:
+            charmap = self._load_charmap()
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, str(e))
+            return
+
+        def done(rep):
+            lines = [rep.summary(), f"Salida: {out}", ""]
+            lines += [f"[AVISO] {w}" for w in rep.warnings]
+            for e in rep.entries:
+                if advhd_wsc.ST_CUT in e.flags or advhd_wsc.ST_UNSUPPORTED in e.flags \
+                        or advhd_wsc.ST_REPLACED in e.flags:
+                    lines.append(f"[{', '.join(e.flags)}] {e.script} {e.sid:04d}: {e.detail}")
+            self._show_report("\n".join(lines))
+
+        self.run_task(advhd_wsc.rebuild, (rio, folder, out),
+                      {"charmap": charmap, "mode": "fixed" if self.fixed_var.get() else "reloc"},
+                      "Reconstruyendo guiones", done)
+
+    # ------------------------------------------------------ Pestaña Audio
+
+    def start_audio(self):
+        src, out = self.au_src_var.get().strip(), self.au_out_var.get().strip()
+        if not src or not Path(src).exists():
+            messagebox.showwarning(APP_TITLE, "Elige la carpeta del juego.")
+            return
+        if not out:
+            messagebox.showwarning(APP_TITLE, "Elige una carpeta de destino.")
+            return
+
+        def done(count):
+            if messagebox.askyesno(APP_TITLE, f"{count} archivos de audio en:\n{out}\n\n¿Abrir la carpeta?"):
+                open_folder(out)
+
+        self.run_task(advhd_extract.extract_audio, (src, out), {}, "Extrayendo audio", done)
 
     # ------------------------------------------------------------ Tareas
 
