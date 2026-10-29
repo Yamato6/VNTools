@@ -11,6 +11,8 @@ import struct
 import sys
 from pathlib import Path
 
+from yeti_common import check_cancel
+
 CRILAYLA_MAGIC = b'CRILAYLA'
 LIB_NAME = '_crilayla.dll' if sys.platform == 'win32' else '_crilayla.so'
 
@@ -110,6 +112,67 @@ def decompress_crilayla_py(data: bytes) -> bytes:
         else:
             out[end - written] = bits(8)
             written += 1
+    return bytes(out)
+
+
+LZSS_WINDOW = 0x1000
+LZSS_MIN = 3
+LZSS_MAX = 18
+LZSS_CHAIN = 8              # candidatos que se prueban por posición
+
+
+def compress_yeti_lzss(data: bytes, cancel=None) -> bytes:
+    """
+    Inverso de decompress_yeti_lzss. Las referencias copian desde op - d (1 <= d < 4096);
+    el decompresor calcula d como (op - 18 - disp) & 0xFFF, así que disp = (op - 18 - d) & 0xFFF.
+    """
+    n = len(data)
+    out = bytearray(struct.pack('<I', n))
+    heads = {}              # 3 bytes -> posiciones recientes (la última al final)
+    i = 0
+    while i < n:
+        if cancel is not None and not i & 0xFFFF:
+            check_cancel(cancel)
+        flag_pos = len(out)
+        out.append(0)
+        flags = 0
+        for bit in range(8):
+            if i >= n:
+                break
+            best_len = 0
+            best_pos = 0
+            limit = min(LZSS_MAX, n - i)
+            if limit >= LZSS_MIN:
+                # Repetición del byte anterior (rellenos de ceros, etc.)
+                if i > 0 and data[i - 1] == data[i]:
+                    k = 0
+                    c = data[i]
+                    while k < limit and data[i + k] == c:
+                        k += 1
+                    best_len, best_pos = k, i - 1
+                for j in reversed(heads.get(data[i:i + 3], ())):
+                    if i - j >= LZSS_WINDOW or best_len == limit:
+                        break
+                    k = 3
+                    while k < limit and data[j + k] == data[i + k]:
+                        k += 1
+                    if k > best_len:
+                        best_len, best_pos = k, j
+            if best_len >= LZSS_MIN:
+                disp = (i - 18 - (i - best_pos)) & 0xFFF
+                out += struct.pack('<H', ((disp & 0xF00) << 4) | ((best_len - 3) << 8) | (disp & 0xFF))
+                step = best_len
+            else:
+                flags |= 1 << bit
+                out.append(data[i])
+                step = 1
+            for p in range(i, min(i + step, n - 2)):
+                chain = heads.setdefault(data[p:p + 3], [])
+                chain.append(p)
+                if len(chain) > LZSS_CHAIN:
+                    del chain[0]
+            i += step
+        out[flag_pos] = flags
     return bytes(out)
 
 

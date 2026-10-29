@@ -6,7 +6,7 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 |------|--------|-------|---------|
 | [**CrossChannel MultiTool**](fs-engine/) | FS Engine | CROSS†CHANNEL | `.pd` archives |
 | [**FVP Tools**](fvp/) | Favorite View Point System | Hoshizora no Memoria, Irotoridori no Sekai, Astral Air… | `.bin` archives, `.nvsg` images, `.hcb` scripts |
-| [**Yeti Tools**](yeti-engine/) | Yeti/Regista | CROSS†CHANNEL -Final Complete- (PC) | `.cpk` archives, `.xtx` textures |
+| [**Yeti Tools**](yeti-engine/) | Yeti/Regista | CROSS†CHANNEL -Final Complete- (PC) | `.cpk` archives, `.xtx` textures, `sn.bin` scripts, audio |
 | [**AdvHD Tools**](advhd-engine/) | AdvHD (WillPlus) | CROSS†CHANNEL (WillPlus edition, 2012) | `.arc` archives, WIPF images, `.wsc` scripts, audio |
 
 ## Features
@@ -25,8 +25,10 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 - Rebuild report listing lines that grew, were cut or had characters replaced
 
 **Yeti Tools** (`yeti-engine/`)
-- Browse a `.cpk` archive (CRIWARE) and extract its files, already decompressed (CRILAYLA or Yeti LZSS)
-- Extract every image of the game as PNG in one step, untiling the Xbox 360 textures (ARGB8888, ARGB4444, DXT5)
+- Browse a `.cpk` archive (CRIWARE) and extract its files, already decompressed (CRILAYLA or Yeti LZSS), and put edited files back into a `.cpk`
+- Extract every image of the game as PNG in one step, untiling the Xbox 360 textures (ARGB8888, ARGB4444, DXT5), and **repack the edited images** in their original format
+- Extract the script text of `sn.bin` and rebuild it with your translation. **Translated lines can be longer than the original**: every jump, switch and choice target is relocated
+- Extract the music, sound effects and voices (HCA, and WAV with vgmstream)
 - Parallel extraction at low priority that can be cancelled and resumed
 - Convert loose `.xtx` textures such as the game font, optionally one image per channel
 
@@ -99,7 +101,8 @@ VNTools/
     ├── yeti_codecs.py      CRILAYLA and Yeti LZSS
     ├── _crilayla.c         native CRILAYLA decompressor
     ├── yeti_xtx.py         pak containers and XTX textures
-    ├── yeti_extract.py     extraction logic
+    ├── yeti_script.py      sn.bin scripts
+    ├── yeti_extract.py     image and audio extraction, repacking
     ├── yeti_common.py      shared helpers
     ├── yeti_tool.py        command line
     ├── yeti_gui.py         graphical interface

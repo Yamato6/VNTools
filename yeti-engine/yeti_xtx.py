@@ -7,8 +7,9 @@ XTX: "xtx\\0", u8 formato (+3 relleno), u32 BE ancho/alto alineados, ancho/alto 
      datos desde 0x20, en orden tiled de Xbox 360.
 """
 
+import io
 import struct
-from typing import Iterator, Tuple
+from typing import Dict, Iterator, List, Tuple
 
 import numpy as np
 from PIL import Image
@@ -102,6 +103,12 @@ def xtx_info(b: bytes) -> Tuple[int, int, int]:
 
 
 def xtx_to_image(b: bytes) -> Image.Image:
+    img, w, h = _decode_full(b)
+    return img.crop((0, 0, w, h))
+
+
+def _decode_full(b: bytes):
+    """Textura completa (tamaño alineado) y su tamaño real."""
     if not is_xtx(b):
         raise ValueError("No es una textura XTX")
     fmt = b[4]
@@ -126,4 +133,104 @@ def xtx_to_image(b: bytes) -> Image.Image:
         img = Image.fromarray(rgba.astype(np.uint8), 'RGBA')
     else:
         raise ValueError(f"Formato XTX no soportado: {fmt}")
-    return img.crop((0, 0, w, h))
+    return img, w, h
+
+
+def _tile(linear: np.ndarray, w: int, h: int, pitch: int) -> np.ndarray:
+    """Inverso de _untile: array (n, pitch) en orden lineal -> orden tiled."""
+    x, y = _x360_tiled_xy(w * h, w, pitch)
+    ok = (x < w) & (y < h)
+    out = np.zeros_like(linear)
+    out[ok] = linear[y[ok] * w + x[ok]]
+    return out
+
+
+def _dxt5_blocks(img: Image.Image) -> bytes:
+    """Bloques BC3 (DXT5) de una imagen RGBA, en orden lineal, con el codificador de Pillow."""
+    buf = io.BytesIO()
+    img.save(buf, format='DDS', pixel_format='DXT5')
+    data = buf.getvalue()
+    (header_size,) = struct.unpack_from('<I', data, 4)
+    return data[4 + header_size:]
+
+
+def image_to_xtx(img: Image.Image, original: bytes) -> bytes:
+    """
+    Codifica una imagen en el mismo formato y tamaño que la textura original (cabecera y
+    zona de relleno incluidas). La imagen debe medir lo mismo que la original.
+    """
+    full, w, h = _decode_full(original)
+    if img.size != (w, h):
+        raise ValueError(f"mide {img.size[0]}x{img.size[1]} y la textura original {w}x{h}")
+    fmt = original[4]
+    aw, ah = full.size
+    full = full.convert('RGBA')
+    full.paste(img.convert('RGBA'), (0, 0))
+    rgba = np.asarray(full, dtype=np.uint32)
+    r, g, b, a = (rgba[..., k] for k in range(4))
+    if fmt == FMT_ARGB8888:
+        v = (a << 24) | (r << 16) | (g << 8) | b
+        body = _tile(v.reshape(-1, 1), aw, ah, 4).reshape(-1).astype('>u4').tobytes()
+    elif fmt == FMT_ARGB4444:
+        q = [((c * 15 + 127) // 255) for c in (a, r, g, b)]
+        v = (q[0] << 12) | (q[1] << 8) | (q[2] << 4) | q[3]
+        body = _tile(v.reshape(-1, 1), aw, ah, 2).reshape(-1).astype('>u2').tobytes()
+    elif fmt == FMT_DXT5:
+        bw, bh = aw // 4, ah // 4
+        blocks = np.frombuffer(_dxt5_blocks(full), dtype=np.uint8).reshape(-1, 16).copy()
+        # Los bloques 4x4 sin cambios conservan los bytes originales (DXT5 pierde calidad)
+        old_full = np.asarray(_decode_full(original)[0].convert('RGBA'), dtype=np.uint8)
+        new_full = np.asarray(full, dtype=np.uint8)
+        same = (old_full == new_full).reshape(bh, 4, bw, 4, 4).all(axis=(1, 3, 4)).reshape(-1)
+        old_body = np.frombuffer(original[XTX_HEADER:XTX_HEADER + bw * bh * 16], dtype=np.uint8)
+        old_blocks = _untile(old_body.reshape(-1, 2)[:, ::-1].reshape(-1, 16), bw, bh, 16)
+        blocks[same] = old_blocks[same]
+        tiled = _tile(blocks, bw, bh, 16)
+        body = tiled.reshape(-1, 2)[:, ::-1].tobytes()          # intercambio de 16 bits
+    else:
+        raise ValueError(f"Formato XTX no soportado: {fmt}")
+    rest = original[XTX_HEADER + len(body):]                    # datos tras la imagen, si los hay
+    return original[:XTX_HEADER] + body + rest
+
+
+# =============================================================================
+# Reconstruir paks
+# =============================================================================
+
+def pak_entries(b: bytes) -> List[bytes]:
+    """Datos de cada entrada de un pak (b'' en las vacías)."""
+    n = struct.unpack_from('<I', b, 0)[0] // 16
+    out = []
+    for i in range(n):
+        o, s = struct.unpack_from('<II', b, i * 16)
+        out.append(b[o:o + s] if s else b'')
+    return out
+
+
+def build_pak(entries: List[bytes]) -> bytes:
+    """Inverso de pak_entries: tabla y datos seguidos, cada entrada alineada a 16 bytes."""
+    table = bytearray()
+    body = bytearray()
+    base = 16 * len(entries)
+    for e in entries:
+        if e:
+            body += bytes(-len(body) % 16)
+            table += struct.pack('<IIII', base + len(body), len(e), 0, 0)
+            body += e
+        else:
+            table += bytes(16)
+    return bytes(table + body)
+
+
+def replace_leaves(b: bytes, replacements: Dict[Tuple[int, ...], bytes]) -> bytes:
+    """
+    Sustituye hojas de un pak (con anidados). Las claves son la ruta de índices de la hoja,
+    como en los nombres de walk_pak: '00012_003_001' -> (3, 1).
+    """
+    if () in replacements:
+        return replacements[()]
+    entries = pak_entries(b)
+    for i in sorted({path[0] for path in replacements}):
+        sub = {path[1:]: data for path, data in replacements.items() if path[0] == i}
+        entries[i] = replace_leaves(entries[i], sub)
+    return build_pak(entries)

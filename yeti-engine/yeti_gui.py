@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Yeti Tools GUI - Interfaz gráfica para archivos .cpk e imágenes XTX (motor Yeti/Regista)
+Yeti Tools GUI - Archivos .cpk, imágenes XTX, guiones y audio (motor Yeti/Regista)
 Juego: CROSS†CHANNEL -Final Complete- (PC)
 """
 
@@ -18,6 +18,7 @@ from PIL import Image
 
 import yeti_codecs
 import yeti_extract
+import yeti_script
 from yeti_common import Cancelled
 from yeti_cpk import CPK
 from yeti_xtx import xtx_info, xtx_to_image
@@ -77,9 +78,162 @@ class App(ctk.CTk):
         self.tabs = ctk.CTkTabview(self)
         self.tabs.grid(row=0, column=0, sticky="nsew", padx=12, pady=(6, 0))
         self._build_images_tab(self.tabs.add("Imágenes"))
+        self._build_repack_tab(self.tabs.add("Reempaquetar"))
+        self._build_scripts_tab(self.tabs.add("Guiones"))
+        self._build_audio_tab(self.tabs.add("Audio"))
         self._build_cpk_tab(self.tabs.add("Archivos CPK"))
         self._build_xtx_tab(self.tabs.add("XTX"))
         self._build_status_bar()
+
+    def _path_row(self, tab, row, label, var, command, button="Elegir…"):
+        """Fila etiqueta + campo + botón."""
+        ctk.CTkLabel(tab, text=label).grid(row=row, column=0, sticky="w", padx=(4, 8), pady=6)
+        ctk.CTkEntry(tab, textvariable=var).grid(row=row, column=1, sticky="ew", pady=6)
+        btn = ctk.CTkButton(tab, text=button, width=120, command=command)
+        btn.grid(row=row, column=2, padx=(8, 4), pady=6)
+        self.busy_widgets.append(btn)
+
+    def _note(self, tab, row, text):
+        ctk.CTkLabel(tab, text=text, justify="left", anchor="w", text_color=("gray35", "gray65")) \
+            .grid(row=row, column=1, columnspan=2, sticky="ew", pady=(0, 6))
+
+    def _build_repack_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        self.rp_cpk_var = tk.StringVar()
+        self.rp_dir_var = tk.StringVar()
+        self.rp_out_var = tk.StringVar()
+        self._path_row(tab, 0, ".cpk original:", self.rp_cpk_var,
+                       lambda: self._ask_open(self.rp_cpk_var, "Archivo .cpk original", self._rp_defaults))
+        self._path_row(tab, 1, "Carpeta de imágenes:", self.rp_dir_var,
+                       lambda: self._ask_dir(self.rp_dir_var, "Carpeta con las imágenes extraídas"))
+        self._note(tab, 2, "La carpeta de la extracción (o la de ese .cpk dentro de ella). Solo se vuelven "
+                           "a codificar las texturas\nque editaste, con su formato original; el resto se "
+                           "copia tal cual.")
+        self._path_row(tab, 3, ".cpk de salida:", self.rp_out_var,
+                       lambda: self._ask_save(self.rp_out_var, "Guardar .cpk", ".cpk"), "Guardar como…")
+        btn = ctk.CTkButton(tab, text="Crear .cpk", width=160, command=self.start_repack)
+        btn.grid(row=4, column=2, sticky="e", padx=4, pady=(18, 0))
+        self.busy_widgets.append(btn)
+
+    def _build_scripts_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        tab.grid_rowconfigure(8, weight=1)
+        self.sn_var = tk.StringVar()
+        self.txt_dir_var = tk.StringVar()
+        self.charmap_var = tk.StringVar()
+        self.sn_out_var = tk.StringVar()
+        self._path_row(tab, 0, "sn.bin:", self.sn_var,
+                       lambda: self._ask_open(self.sn_var, "Archivo de guiones (sn.bin)", self._sn_defaults,
+                                              [("sn.bin", "*.bin"), ("Todos", "*.*")]))
+        self._path_row(tab, 1, "Carpeta de textos:", self.txt_dir_var,
+                       lambda: self._ask_dir(self.txt_dir_var, "Carpeta de textos"))
+        self._path_row(tab, 2, "Tabla de caracteres:", self.charmap_var,
+                       lambda: self._ask_open(self.charmap_var, "Tabla de caracteres (opcional)",
+                                              types=[("Texto", "*.txt"), ("Todos", "*.*")]))
+        self._note(tab, 3, "Opcional: para letras que no existen en Shift-JIS (ñ, á…) con una fuente propia.")
+
+        row = ctk.CTkFrame(tab, fg_color="transparent")
+        row.grid(row=4, column=1, columnspan=2, sticky="ew", pady=6)
+        self.listing_var = tk.BooleanVar(value=False)
+        cb = ctk.CTkCheckBox(row, text="Guardar también el listado completo de cada guion",
+                             variable=self.listing_var)
+        cb.pack(side="left")
+        btn = ctk.CTkButton(row, text="Extraer textos", width=140, command=self.start_script_strings)
+        btn.pack(side="right", padx=(8, 4))
+        self.busy_widgets += [cb, btn]
+
+        self._path_row(tab, 5, "sn.bin de salida:", self.sn_out_var,
+                       lambda: self._ask_save(self.sn_out_var, "Guardar sn.bin", ".bin"), "Guardar como…")
+        row = ctk.CTkFrame(tab, fg_color="transparent")
+        row.grid(row=6, column=1, columnspan=2, sticky="ew", pady=6)
+        self.fixed_var = tk.BooleanVar(value=False)
+        cb = ctk.CTkCheckBox(row, text="Tamaño fijo (cada texto conserva su tamaño original)",
+                             variable=self.fixed_var)
+        cb.pack(side="left")
+        btn = ctk.CTkButton(row, text="Reconstruir", width=140, command=self.start_script_rebuild)
+        btn.pack(side="right", padx=(8, 4))
+        self.busy_widgets += [cb, btn]
+
+        self.script_report = ctk.CTkTextbox(tab, height=120, wrap="none")
+        self.script_report.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=4, pady=(8, 0))
+        self.script_report.configure(state="disabled")
+
+    def _build_audio_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        self.au_src_var = tk.StringVar()
+        self.au_out_var = tk.StringVar()
+        self._path_row(tab, 0, "Carpeta data:", self.au_src_var, self._au_browse)
+        self._path_row(tab, 1, "Destino:", self.au_out_var,
+                       lambda: self._ask_dir(self.au_out_var, "Carpeta de destino"))
+        self.wav_var = tk.BooleanVar(value=True)
+        cb = ctk.CTkCheckBox(tab, text="Convertir también a WAV", variable=self.wav_var)
+        cb.grid(row=2, column=1, sticky="w", pady=6)
+        vgm = yeti_extract.find_vgmstream()
+        self._note(tab, 3, ("vgmstream-cli encontrado: se puede convertir a WAV." if vgm else
+                            "No se encontró vgmstream-cli: el audio se guarda solo como .hca. Para "
+                            "convertir a WAV descarga\nvgmstream (vgmstream.org) y deja vgmstream-cli.exe "
+                            "en el PATH o junto a esta herramienta.") +
+                   "\nPara volver a meter audio en un .cpk usa «Reempaquetar carpeta…» en Archivos CPK "
+                   "(archivos <id>.hca).")
+        btn = ctk.CTkButton(tab, text="Extraer audio", width=160, command=self.start_audio)
+        btn.grid(row=4, column=2, sticky="e", padx=4, pady=(18, 0))
+        self.busy_widgets += [cb, btn]
+
+    # ------------------------------------------------- Diálogos comunes
+
+    def _ask_open(self, var, title, then=None, types=None):
+        path = filedialog.askopenfilename(title=title, filetypes=types or [("Archivos CPK", "*.cpk"),
+                                                                           ("Todos", "*.*")])
+        if path:
+            var.set(path)
+            if then:
+                then(path)
+
+    def _ask_dir(self, var, title):
+        path = filedialog.askdirectory(title=title)
+        if path:
+            var.set(path)
+
+    def _ask_save(self, var, title, ext):
+        initial = Path(var.get() or f"nuevo{ext}")
+        path = filedialog.asksaveasfilename(title=title, defaultextension=ext,
+                                            initialdir=str(initial.parent) if initial.parent.exists() else None,
+                                            initialfile=initial.name,
+                                            filetypes=[(ext, f"*{ext}"), ("Todos", "*.*")])
+        if path:
+            var.set(path)
+
+    def _confirm_overwrite(self, out_path, source) -> bool:
+        out, src = Path(out_path).resolve(), Path(source).resolve()
+        if out == src:
+            messagebox.showwarning(APP_TITLE, "La salida no puede ser el archivo original.")
+            return False
+        return not out.exists() or messagebox.askyesno(APP_TITLE, f"{out.name} ya existe.\n¿Sobrescribirlo?")
+
+    def _new_data_dir(self, path) -> Path:
+        """<juego>/data_nuevo junto a la carpeta data, para las salidas."""
+        data = Path(path).parent
+        return data.parent / f"{data.name}_nuevo"
+
+    def _rp_defaults(self, path):
+        if not self.rp_out_var.get():
+            self.rp_out_var.set(str(self._new_data_dir(path) / Path(path).name))
+        if not self.rp_dir_var.get() and self.img_out_var.get():
+            self.rp_dir_var.set(self.img_out_var.get())
+
+    def _sn_defaults(self, path):
+        data = Path(path).parent
+        if not self.txt_dir_var.get():
+            self.txt_dir_var.set(str(data.parent / "textos"))
+        if not self.sn_out_var.get():
+            self.sn_out_var.set(str(self._new_data_dir(path) / Path(path).name))
+
+    def _au_browse(self):
+        path = filedialog.askdirectory(title="Carpeta data del juego")
+        if path:
+            self.au_src_var.set(path)
+            if not self.au_out_var.get():
+                self.au_out_var.set(str(Path(path).parent / "audio"))
 
     def _build_images_tab(self, tab):
         tab.grid_columnconfigure(1, weight=1)
@@ -112,19 +266,15 @@ class App(ctk.CTk):
         opts = ctk.CTkFrame(tab, fg_color="transparent")
         opts.grid(row=3, column=1, columnspan=2, sticky="ew", pady=6)
         self.resume_var = tk.BooleanVar(value=True)
-        self.audio_var = tk.BooleanVar(value=False)
         cb1 = ctk.CTkCheckBox(opts, text="Reanudar (saltar lo ya extraído)", variable=self.resume_var)
         cb1.pack(side="left")
-        cb2 = ctk.CTkCheckBox(opts, text="Incluir audio", variable=self.audio_var,
-                              command=self._update_images_info)
-        cb2.pack(side="left", padx=(16, 0))
         ctk.CTkLabel(opts, text="Procesos:").pack(side="left", padx=(16, 6))
         cores = os.cpu_count() or 1
         self.workers_var = tk.StringVar(value=str(yeti_extract.default_workers()))
         om = ctk.CTkOptionMenu(opts, values=[str(n) for n in range(1, cores + 1)], width=70,
                                variable=self.workers_var)
         om.pack(side="left")
-        self.busy_widgets += [cb1, cb2, om]
+        self.busy_widgets += [cb1, om]
 
         btn = ctk.CTkButton(tab, text="Extraer imágenes", width=160, command=self.start_images)
         btn.grid(row=4, column=2, sticky="e", padx=4, pady=(6, 0))
@@ -191,7 +341,10 @@ class App(ctk.CTk):
         btn_sel = ctk.CTkButton(actions, text="Extraer seleccionados",
                                 command=lambda: self.start_raw(True))
         btn_sel.pack(side="right", padx=8)
-        self.busy_widgets += [btn_all, btn_sel]
+        btn_pack = ctk.CTkButton(actions, text="Reempaquetar carpeta…", fg_color="gray40",
+                                 hover_color="gray30", command=self.start_pack_files)
+        btn_pack.pack(side="right", padx=(0, 8))
+        self.busy_widgets += [btn_all, btn_sel, btn_pack]
 
         ctk.CTkLabel(tab, text="Los archivos se guardan ya descomprimidos (sin CRILAYLA ni LZSS), "
                                "como <id>.bin.", anchor="w", text_color=("gray35", "gray65")) \
@@ -301,7 +454,7 @@ class App(ctk.CTk):
             self.src_info.configure(text="")
             return
         try:
-            cpks = yeti_extract.find_cpks(src, self.audio_var.get())
+            cpks = yeti_extract.find_cpks(src)
         except OSError as e:
             self.src_info.configure(text=str(e))
             return
@@ -322,7 +475,7 @@ class App(ctk.CTk):
         if not out_dir:
             messagebox.showwarning(APP_TITLE, "Elige una carpeta de destino.")
             return
-        if not yeti_extract.find_cpks(src, self.audio_var.get()):
+        if not yeti_extract.find_cpks(src):
             messagebox.showwarning(APP_TITLE, "No hay archivos .cpk que procesar.")
             return
 
@@ -337,7 +490,7 @@ class App(ctk.CTk):
 
         self.img_preview.configure(image=None, text="")
         self.run_task(yeti_extract.extract_images, (src, out_dir),
-                      {"resume": self.resume_var.get(), "include_audio": self.audio_var.get(),
+                      {"resume": self.resume_var.get(),
                        "workers": int(self.workers_var.get())},
                       "Extrayendo imágenes", done)
 
@@ -475,6 +628,135 @@ class App(ctk.CTk):
                 open_folder(Path(out_path).parent)
 
         self.run_task(convert, (xtx_path, out_path, self.split_var.get()), {}, "Convirtiendo", done)
+
+    def start_pack_files(self):
+        cpk_path = self.cpk_var.get().strip()
+        if not self.entries:
+            messagebox.showwarning(APP_TITLE, "Primero abre el .cpk original.")
+            return
+        folder = filedialog.askdirectory(title="Carpeta con los archivos <id>.bin o <id>.hca")
+        if not folder:
+            return
+        out = filedialog.asksaveasfilename(title="Guardar .cpk", defaultextension=".cpk",
+                                           initialdir=str(self._new_data_dir(cpk_path)),
+                                           initialfile=Path(cpk_path).name,
+                                           filetypes=[("Archivos CPK", "*.cpk"), ("Todos", "*.*")])
+        if not out or not self._confirm_overwrite(out, cpk_path):
+            return
+        self.run_task(yeti_extract.pack_files, (cpk_path, folder, out), {}, "Reempaquetando",
+                      lambda r: self._pack_done(r, out))
+
+    def _pack_done(self, r, out):
+        if r.errors:
+            messagebox.showerror(APP_TITLE, "No se creó el archivo. Errores:\n\n" + "\n".join(r.errors[:15]))
+            return
+        changed = "\n".join(r.changed[:15]) + ("\n…" if len(r.changed) > 15 else "")
+        if messagebox.askyesno(APP_TITLE, f"{len(r.changed)} reemplazados de {r.entries} archivos"
+                                          f"{':' if r.changed else '.'}\n{changed}\n\n{out}\n\n"
+                                          "¿Abrir la carpeta?"):
+            open_folder(Path(out).parent)
+
+    # ------------------------------------------------- Pestaña Reempaquetar
+
+    def start_repack(self):
+        cpk, folder, out = (v.get().strip() for v in (self.rp_cpk_var, self.rp_dir_var, self.rp_out_var))
+        if not cpk or not Path(cpk).is_file():
+            messagebox.showwarning(APP_TITLE, "Elige el .cpk original.")
+            return
+        if not folder or not Path(folder).is_dir():
+            messagebox.showwarning(APP_TITLE, "Elige la carpeta con las imágenes extraídas.")
+            return
+        if not out or not self._confirm_overwrite(out, cpk):
+            return
+        self.run_task(yeti_extract.pack_images, (cpk, folder, out), {}, "Reempaquetando",
+                      lambda r: self._pack_done(r, out))
+
+    # ---------------------------------------------------- Pestaña Guiones
+
+    def _load_charmap(self):
+        path = self.charmap_var.get().strip()
+        return yeti_script.CharMap.load(path) if path else None
+
+    def _show_report(self, text):
+        self.script_report.configure(state="normal")
+        self.script_report.delete("1.0", "end")
+        self.script_report.insert("1.0", text)
+        self.script_report.configure(state="disabled")
+
+    def start_script_strings(self):
+        sn, folder = self.sn_var.get().strip(), self.txt_dir_var.get().strip()
+        if not sn or not Path(sn).is_file():
+            messagebox.showwarning(APP_TITLE, "Elige sn.bin.")
+            return
+        if not folder:
+            messagebox.showwarning(APP_TITLE, "Elige la carpeta de textos.")
+            return
+        try:
+            charmap = self._load_charmap()
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, str(e))
+            return
+
+        def done(result):
+            files, strings = result
+            self._show_report(f"{strings} textos de {files} guiones en {folder}\n"
+                              "Un archivo por guion: ID|DIRECCIÓN|TEXTO. Traduce solo el texto.")
+            if messagebox.askyesno(APP_TITLE, f"{strings} textos de {files} guiones.\n\n¿Abrir la carpeta?"):
+                open_folder(folder)
+
+        self.run_task(yeti_script.extract_strings, (sn, folder),
+                      {"charmap": charmap, "with_listing": self.listing_var.get()},
+                      "Extrayendo textos", done)
+
+    def start_script_rebuild(self):
+        sn, folder, out = (v.get().strip() for v in (self.sn_var, self.txt_dir_var, self.sn_out_var))
+        if not sn or not Path(sn).is_file():
+            messagebox.showwarning(APP_TITLE, "Elige sn.bin.")
+            return
+        if not folder or not Path(folder).is_dir():
+            messagebox.showwarning(APP_TITLE, "Elige la carpeta de textos.")
+            return
+        if not out or not self._confirm_overwrite(out, sn):
+            return
+        try:
+            charmap = self._load_charmap()
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, str(e))
+            return
+
+        def done(rep):
+            lines = [rep.summary(), f"Salida: {out}", ""]
+            lines += [f"[AVISO] {w}" for w in rep.warnings]
+            for e in rep.entries:
+                if yeti_script.ST_CUT in e.flags or yeti_script.ST_UNSUPPORTED in e.flags \
+                        or yeti_script.ST_REPLACED in e.flags:
+                    lines.append(f"[{', '.join(e.flags)}] {e.script} {e.sid:04d}: {e.detail}")
+            self._show_report("\n".join(lines))
+
+        self.run_task(yeti_script.rebuild, (sn, folder, out),
+                      {"charmap": charmap, "mode": "fixed" if self.fixed_var.get() else "reloc"},
+                      "Reconstruyendo guiones", done)
+
+    # ------------------------------------------------------ Pestaña Audio
+
+    def start_audio(self):
+        src, out = self.au_src_var.get().strip(), self.au_out_var.get().strip()
+        if not src or not Path(src).exists():
+            messagebox.showwarning(APP_TITLE, "Elige la carpeta data del juego.")
+            return
+        if not out:
+            messagebox.showwarning(APP_TITLE, "Elige una carpeta de destino.")
+            return
+
+        def done(r):
+            text = f"{r.files} archivos .hca" + (f" y {r.wav} .wav" if r.wav else "") + f" en:\n{out}"
+            if r.errors:
+                text += f"\n\n{len(r.errors)} errores al convertir:\n" + "\n".join(r.errors[:5])
+            if messagebox.askyesno(APP_TITLE, text + "\n\n¿Abrir la carpeta?"):
+                open_folder(out)
+
+        self.run_task(yeti_extract.extract_audio, (src, out), {"wav": self.wav_var.get()},
+                      "Extrayendo audio", done)
 
     # ------------------------------------------------------------ Tareas
 

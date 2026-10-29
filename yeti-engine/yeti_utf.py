@@ -87,6 +87,9 @@ class UTFTable:
                     row[col['name']] = None
             self.rows.append(row)
 
+    def to_bytes(self) -> bytes:
+        return write_table(self.name, self.columns, self.rows)
+
     def _read_value(self, t: int, p: int):
         b = self.buf
         if t in (0, 1):
@@ -107,3 +110,67 @@ class UTFTable:
             s = self.data_off + o
             return bytes(b[s:s + n]), p + 8
         raise ValueError(f"Tipo de columna desconocido: {t:#x}")
+
+
+# =============================================================================
+# Escritura
+# =============================================================================
+
+_INT_FORMATS = {0: '>B', 1: '>B', 2: '>H', 3: '>H', 4: '>I', 5: '>I', 6: '>Q', 7: '>Q', 8: '>f'}
+_TYPE_SIZES = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 8, 7: 8, 8: 4, 0xA: 4, 0xB: 8}
+
+
+def column(name: str, flags: int, const=None) -> dict:
+    return {'name': name, 'flags': flags, 'const': const}
+
+
+def write_table(name: str, columns, rows) -> bytes:
+    """
+    Inverso de UTFTable: columns es una lista de dicts {'name', 'flags', 'const'} y rows una
+    lista de dicts. Mismo orden que las tablas de CRIWARE: cadenas '<NULL>', nombre de la
+    tabla, nombres de columna y valores; luego los blobs; todo alineado a 8 bytes.
+    """
+    strings = bytearray(b'<NULL>\0')
+    string_offsets = {'<NULL>': 0}
+    blobs = bytearray()
+
+    def add_string(s: str) -> int:
+        if s not in string_offsets:
+            string_offsets[s] = len(strings)
+            strings.extend(s.encode('utf-8') + b'\0')
+        return string_offsets[s]
+
+    def value(t: int, v) -> bytes:
+        if t in _INT_FORMATS:
+            return struct.pack(_INT_FORMATS[t], v)
+        if t == 0xA:
+            return struct.pack('>I', add_string(v))
+        if t == 0xB:
+            off = len(blobs)
+            blobs.extend(v)
+            return struct.pack('>II', off, len(v))
+        raise ValueError(f"Tipo de columna desconocido: {t:#x}")
+
+    name_off = add_string(name)
+    col_defs = bytearray()
+    for col in columns:
+        col_defs += bytes([col['flags']]) + struct.pack('>I', add_string(col['name']))
+        if col['flags'] & STORAGE_MASK == STORAGE_CONSTANT:
+            col_defs += value(col['flags'] & TYPE_MASK, col['const'])
+    row_data = bytearray()
+    for row in rows:
+        for col in columns:
+            if col['flags'] & STORAGE_MASK == STORAGE_PERROW:
+                row_data += value(col['flags'] & TYPE_MASK, row[col['name']])
+    row_len = sum(_TYPE_SIZES[c['flags'] & TYPE_MASK] for c in columns
+                  if c['flags'] & STORAGE_MASK == STORAGE_PERROW)
+
+    rows_off = 32 + len(col_defs)
+    strings_off = rows_off + len(row_data)
+    strings += bytes(-(strings_off + len(strings)) % 8)
+    data_off = strings_off + len(strings)
+    body = bytes(col_defs + row_data + strings + blobs)
+    body += bytes(-(32 + len(body)) % 8)
+    header = b'@UTF' + struct.pack('>IIIIIHHI', 24 + len(body), rows_off - 8, strings_off - 8,
+                                   data_off - 8, name_off, len(columns), row_len, len(rows))
+    return header + body

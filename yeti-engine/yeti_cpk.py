@@ -12,10 +12,11 @@ Los .cpk de CROSS†CHANNEL -Final Complete- usan CpkMode 0, solo ITOC.
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, List, Optional
+from typing import BinaryIO, Dict, List, Optional
 
 from yeti_codecs import decompress_crilayla, is_crilayla
-from yeti_utf import UTFTable
+from yeti_common import atomic_write, check_cancel, report
+from yeti_utf import UTFTable, write_table
 
 NONE_OFFSET = 0xFFFFFFFFFFFFFFFF
 
@@ -107,3 +108,91 @@ class CPK:
 
     def close(self):
         self.f.close()
+
+
+# =============================================================================
+# Escritura
+# =============================================================================
+
+COPY_CHUNK = 1 << 20
+SMALL_LIMIT = 0x10000       # DataL: archivos cuyos tamaños caben en 16 bits
+
+
+def _packet(magic: bytes, table: bytes) -> bytes:
+    return magic + struct.pack('<IQ', 0xFF, len(table)) + table
+
+
+def write_cpk(cpk: CPK, out_path, replace: Dict[int, bytes], progress=None, cancel=None) -> int:
+    """
+    Escribe un .cpk igual que cpk (mismo modo, solo ITOC) con los archivos de replace
+    (ID -> datos tal cual se guardan, sin CRILAYLA) en lugar de los originales.
+    Sin cambios, el resultado es idéntico al original. Devuelve los archivos reemplazados.
+    """
+    if cpk.header.get('TocOffset') not in (None, 0, NONE_OFFSET) or not cpk.header.get('ItocOffset'):
+        raise ValueError("Solo se pueden reempaquetar .cpk con ITOC (sin TOC)")
+    align = cpk.align
+    itoc_off = cpk.header['ItocOffset']
+    itoc = _read_packet(cpk.f, itoc_off, b'ITOC')
+    tables = {k: UTFTable(itoc.rows[0][k]) for k in ('DataL', 'DataH')}
+
+    sizes = []          # (entrada, tamaño guardado, tamaño real)
+    for e in cpk.entries:
+        if e.id in replace:
+            sizes.append((e, len(replace[e.id]), len(replace[e.id])))
+        else:
+            sizes.append((e, e.size, e.extract_size))
+    rows = {'DataL': [], 'DataH': []}
+    for e, size, ext in sizes:
+        key = 'DataL' if max(size, ext) < SMALL_LIMIT else 'DataH'
+        rows[key].append({'ID': e.id, 'FileSize': size, 'ExtractSize': ext})
+    itoc_row = dict(itoc.rows[0])
+    itoc_row.update({'FilesL': len(rows['DataL']), 'FilesH': len(rows['DataH'])})
+    for k in ('DataL', 'DataH'):
+        itoc_row[k] = write_table(tables[k].name, tables[k].columns, rows[k])
+    itoc_packet = _packet(b'ITOC', write_table(itoc.name, itoc.columns, [itoc_row]))
+
+    content_off = itoc_off + len(itoc_packet)
+    content_off += -content_off % align
+    header = dict(cpk.header)
+    header.update({
+        'ItocSize': len(itoc_packet),
+        'ContentOffset': content_off,
+        'ContentSize': sum(size + (-size % align) for _e, size, _x in sizes),
+        'EnabledDataSize': sum(size for _e, size, _x in sizes),
+        'EnabledPackedSize': sum(ext for _e, _s, ext in sizes),
+        'Files': len(sizes),
+    })
+    header_table = _read_packet(cpk.f, 0, b'CPK ')
+    header_packet = _packet(b'CPK ', write_table(header_table.name, header_table.columns, [header]))
+    cpk.f.seek(0)
+    head_area = bytearray(cpk.f.read(itoc_off))
+    if len(header_packet) > len(head_area):
+        raise ValueError("La cabecera del .cpk no cabe antes del ITOC")
+    head_area[:len(header_packet)] = header_packet
+
+    total = len(sizes)
+    with atomic_write(out_path) as out:
+        out.write(head_area)
+        out.write(itoc_packet)
+        out.write(bytes(content_off - itoc_off - len(itoc_packet)))
+        pos = content_off
+        for i, (e, size, _ext) in enumerate(sizes):
+            check_cancel(cancel)
+            report(progress, i, total, e.path)
+            if pos % align:
+                out.write(bytes(-pos % align))
+                pos += -pos % align
+            if e.id in replace:
+                out.write(replace[e.id])
+            else:
+                cpk.f.seek(e.offset)
+                left = e.size
+                while left:
+                    chunk = cpk.f.read(min(COPY_CHUNK, left))
+                    if not chunk:
+                        raise ValueError(f"Datos truncados: {e.path}")
+                    out.write(chunk)
+                    left -= len(chunk)
+            pos += size
+    report(progress, total, total)
+    return sum(1 for e in cpk.entries if e.id in replace)

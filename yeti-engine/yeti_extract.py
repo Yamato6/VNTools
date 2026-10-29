@@ -7,21 +7,30 @@ Cada archivo del .cpk:
     -> pak de Yeti (con paks anidados) -> texturas XTX y datos sin identificar
 """
 
+import hashlib
+import io
+import json
 import os
+import shutil
 import struct
+import subprocess
 import sys
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from yeti_codecs import decompress_yeti_lzss
+from PIL import Image
+
+from yeti_codecs import compress_yeti_lzss, decompress_yeti_lzss
 from yeti_common import atomic_write, check_cancel, report
-from yeti_cpk import CPK, Entry
-from yeti_xtx import is_pak, is_xtx, walk_pak, xtx_to_image
+from yeti_cpk import CPK, Entry, write_cpk
+from yeti_xtx import (image_to_xtx, is_pak, is_xtx, pak_entries, replace_leaves, walk_pak,
+                      xtx_to_image)
 
 PROGRESS_FILE = '_progreso.txt'
-AUDIO_CPKS = {'bgm', 'bgs', 'se', 'vo'}
+IMAGES_FILE = '_images.json'            # hash de cada PNG y si el archivo llevaba LZSS
+AUDIO_CPKS = {'bgm', 'se', 'vo'}          # HCA de CRIWARE (bgs.cpk son texturas)
 DEFAULT_PNG_LEVEL = 1
 
 
@@ -33,21 +42,31 @@ class ImagesResult:
     errors: List[str] = field(default_factory=list)
 
 
+def is_hca(data: bytes) -> bool:
+    """Audio HCA de CRIWARE (la firma puede llevar el bit alto puesto)."""
+    return bytes(c & 0x7F for c in data[:4]) == b'HCA\0'
+
+
 def unpack(cpk: CPK, e: Entry) -> bytes:
     """Datos de un archivo ya descomprimidos (CRILAYLA lo quita CPK.read)."""
+    return unpack_info(cpk, e)[0]
+
+
+def unpack_info(cpk: CPK, e: Entry) -> Tuple[bytes, bool]:
+    """(datos descomprimidos, si llevaba el LZSS de Yeti)."""
     data = cpk.read(e)
-    if e.compressed or is_xtx(data) or len(data) < 5:
-        return data
+    if e.compressed or is_xtx(data) or is_hca(data) or len(data) < 5:
+        return data, False
     # Sin CRILAYLA: puede llevar el LZSS de Yeti. Solo se acepta si sale un pak o un XTX.
     (size,) = struct.unpack_from('<I', data, 0)
     if 0 < size < 1 << 30:
         try:
             out = decompress_yeti_lzss(data)
         except (IndexError, struct.error):
-            return data
+            return data, False
         if is_pak(out) or is_xtx(out):
-            return out
-    return data
+            return out, True
+    return data, False
 
 
 def leaves(e: Entry, data: bytes) -> Iterable[Tuple[str, bytes]]:
@@ -57,15 +76,16 @@ def leaves(e: Entry, data: bytes) -> Iterable[Tuple[str, bytes]]:
     return [(f"{e.id:05d}", data)]
 
 
-def find_cpks(src, include_audio: bool = False) -> List[Path]:
-    """src puede ser un .cpk o la carpeta data\\ del juego."""
+def find_cpks(src, audio: bool = False) -> List[Path]:
+    """
+    src puede ser un .cpk o la carpeta data\\ del juego. De una carpeta devuelve los .cpk
+    de imágenes o, con audio=True, los de audio.
+    """
     src = Path(src)
     if src.is_file():
         return [src]
     cpks = sorted(p for p in src.iterdir() if p.suffix.lower() == '.cpk')
-    if not include_audio:
-        cpks = [p for p in cpks if p.stem.lower() not in AUDIO_CPKS]
-    return cpks
+    return [p for p in cpks if (p.stem.lower() in AUDIO_CPKS) == audio]
 
 
 # =============================================================================
@@ -128,25 +148,32 @@ def _cpk_for(path: str) -> CPK:
 def _process_entry(cpk_path: str, e: Entry, out_dir: str, skip_existing: bool, png_level: int):
     """
     Convierte un archivo del .cpk. Corre en un proceso aparte.
-    Devuelve (id, imágenes, otros, errores, último PNG, terminado).
+    Devuelve (id, imágenes, otros, errores, último PNG, registro, terminado); el registro va a
+    _images.json: {'lzss': bool, 'files': {png: sha1}} (None en los PNG que ya existían).
     """
     out = Path(out_dir)
     n_img = n_other = 0
     errors = []
     last_png = ''
+    files = {}
     try:
-        data = unpack(_cpk_for(cpk_path), e)
+        data, lzss = unpack_info(_cpk_for(cpk_path), e)
         for name, blob in leaves(e, data):
             if is_xtx(blob):
                 dest = out / f"{name}.png"
-                if not (skip_existing and dest.exists()):
+                if skip_existing and dest.exists():
+                    files[dest.name] = None
+                else:
                     try:
                         img = xtx_to_image(blob)
                     except Exception as ex:
                         errors.append(f"{out.name}/{name}: {ex}")
                         continue
+                    buf = io.BytesIO()
+                    img.save(buf, format='PNG', compress_level=png_level)
                     with atomic_write(dest) as f:
-                        img.save(f, format='PNG', compress_level=png_level)
+                        f.write(buf.getvalue())
+                    files[dest.name] = hashlib.sha1(buf.getvalue()).hexdigest()
                     last_png = str(dest)
                 n_img += 1
             else:
@@ -155,8 +182,9 @@ def _process_entry(cpk_path: str, e: Entry, out_dir: str, skip_existing: bool, p
                 n_other += 1
     except Exception as ex:
         errors.append(f"{out.name}/{e.id:05d}: {ex}")
-        return e.id, n_img, n_other, errors, last_png, False
-    return e.id, n_img, n_other, errors, last_png, True
+        return e.id, n_img, n_other, errors, last_png, None, False
+    record = {'lzss': lzss, 'files': files} if files else None
+    return e.id, n_img, n_other, errors, last_png, record, True
 
 
 def _read_done(progress_path: Path) -> set:
@@ -166,7 +194,20 @@ def _read_done(progress_path: Path) -> set:
         return set()
 
 
-def extract_images(src, out_root, resume: bool = False, include_audio: bool = False,
+def read_images_info(folder) -> Dict[str, dict]:
+    try:
+        return json.loads((Path(folder) / IMAGES_FILE).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_images_info(folder: Path, info: Dict[str, dict]):
+    data = json.dumps(dict(sorted(info.items())), indent=1)
+    with atomic_write(folder / IMAGES_FILE) as f:
+        f.write(data.encode('utf-8'))
+
+
+def extract_images(src, out_root, resume: bool = False,
                    workers: Optional[int] = None, png_level: int = DEFAULT_PNG_LEVEL,
                    progress=None, cancel=None) -> ImagesResult:
     """
@@ -183,7 +224,8 @@ def extract_images(src, out_root, resume: bool = False, include_audio: bool = Fa
     # Trabajo pendiente de todos los .cpk
     jobs = []           # (cpk_path, entry, out_dir)
     progress_files = {}
-    for cpk_path in find_cpks(src, include_audio):
+    images_info = {}    # cpk_path -> {id: registro}
+    for cpk_path in find_cpks(src):
         out_dir = out_root / cpk_path.stem
         out_dir.mkdir(parents=True, exist_ok=True)
         prog = out_dir / PROGRESS_FILE
@@ -191,6 +233,7 @@ def extract_images(src, out_root, resume: bool = False, include_audio: bool = Fa
         if not resume:
             prog.write_text('', encoding='utf-8')
         progress_files[str(cpk_path)] = prog
+        images_info[str(cpk_path)] = read_images_info(out_dir) if resume else {}
         with CPK(cpk_path) as cpk:
             for e in cpk.entries:
                 if e.id in done:
@@ -203,7 +246,12 @@ def extract_images(src, out_root, resume: bool = False, include_audio: bool = Fa
 
     def collect(cpk_path, r):
         nonlocal finished
-        eid, n_img, n_other, errors, last_png, ok = r
+        eid, n_img, n_other, errors, last_png, record, ok = r
+        if record:
+            # Los PNG que ya existían conservan el hash de la extracción anterior
+            old = images_info[cpk_path].get(str(eid), {}).get('files', {})
+            record['files'] = {f: sha or old.get(f) for f, sha in record['files'].items()}
+            images_info[cpk_path][str(eid)] = record
         result.images += n_img
         result.others += n_other
         result.errors += errors
@@ -213,31 +261,146 @@ def extract_images(src, out_root, resume: bool = False, include_audio: bool = Fa
         report(progress, finished, total, last_png or f"{Path(cpk_path).stem}/{eid:05d}")
         finished += 1
 
-    if workers == 1:
-        try:
-            for cpk_path, e, out_dir in jobs:
-                check_cancel(cancel)
-                collect(cpk_path, _process_entry(cpk_path, e, out_dir, resume, png_level))
-        finally:
-            for cpk in _open_cpks.values():
-                cpk.close()
-            _open_cpks.clear()
-    else:
-        pool = ProcessPoolExecutor(max_workers=workers, initializer=_low_priority)
-        try:
-            pending = {pool.submit(_process_entry, cpk_path, e, out_dir, resume, png_level): cpk_path
-                       for cpk_path, e, out_dir in jobs}
-            while pending:
-                check_cancel(cancel)
-                done, _ = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
-                for fut in done:
-                    collect(pending.pop(fut), fut.result())
-        finally:
-            # Al cancelar, los archivos en curso terminan (se escriben de forma atómica)
-            # y los pendientes se descartan
-            pool.shutdown(wait=True, cancel_futures=True)
+    try:
+        if workers == 1:
+            try:
+                for cpk_path, e, out_dir in jobs:
+                    check_cancel(cancel)
+                    collect(cpk_path, _process_entry(cpk_path, e, out_dir, resume, png_level))
+            finally:
+                for cpk in _open_cpks.values():
+                    cpk.close()
+                _open_cpks.clear()
+        else:
+            pool = ProcessPoolExecutor(max_workers=workers, initializer=_low_priority)
+            try:
+                pending = {pool.submit(_process_entry, cpk_path, e, out_dir, resume, png_level): cpk_path
+                           for cpk_path, e, out_dir in jobs}
+                while pending:
+                    check_cancel(cancel)
+                    done, _ = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+                    for fut in done:
+                        collect(pending.pop(fut), fut.result())
+            finally:
+                # Al cancelar, los archivos en curso terminan (se escriben de forma atómica)
+                # y los pendientes se descartan
+                pool.shutdown(wait=True, cancel_futures=True)
+    finally:
+        # También al cancelar: lo extraído hasta ahora se puede reempaquetar
+        for cpk_path, info in images_info.items():
+            _write_images_info(Path(progress_files[cpk_path]).parent, info)
 
     report(progress, total, total)
+    return result
+
+
+# =============================================================================
+# Reempaquetar
+# =============================================================================
+
+@dataclass
+class PackResult:
+    entries: int = 0                         # archivos del .cpk
+    changed: List[str] = field(default_factory=list)    # archivos (o PNG) reemplazados
+    errors: List[str] = field(default_factory=list)
+
+
+def _sha1_file(path: Path) -> Optional[str]:
+    try:
+        return hashlib.sha1(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _leaf(data: bytes, path: Tuple[int, ...]) -> bytes:
+    for i in path:
+        data = pak_entries(data)[i]
+    return data
+
+
+def find_images_folder(folder, cpk_path) -> Path:
+    """Acepta la carpeta de un .cpk (<salida>/bg) o la de toda la extracción (<salida>)."""
+    folder = Path(folder)
+    if not (folder / IMAGES_FILE).exists() and (folder / Path(cpk_path).stem / IMAGES_FILE).exists():
+        folder = folder / Path(cpk_path).stem
+    if not (folder / IMAGES_FILE).exists():
+        raise ValueError(f"No se encontró {IMAGES_FILE} en {folder}: extrae primero las imágenes "
+                         "con esta versión de la herramienta")
+    return folder
+
+
+def pack_images(original_cpk, images_folder, out_cpk, progress=None, cancel=None) -> PackResult:
+    """
+    Crea out_cpk a partir de original_cpk, sustituyendo las texturas cuyos PNG se editaron
+    desde la extracción (según los SHA-1 de _images.json). Cada textura conserva su formato
+    y tamaño; los archivos tocados se guardan sin CRILAYLA (con LZSS si el original lo llevaba).
+    """
+    folder = find_images_folder(images_folder, original_cpk)
+    info = read_images_info(folder)
+    result = PackResult()
+    replace = {}
+    with CPK(original_cpk) as cpk:
+        result.entries = len(cpk.entries)
+        by_id = {e.id: e for e in cpk.entries}
+        todo = [(int(k), rec) for k, rec in info.items() if int(k) in by_id]
+        for i, (eid, rec) in enumerate(todo):
+            check_cancel(cancel)
+            changed = [f for f, sha in rec['files'].items()
+                       if sha and _sha1_file(folder / f) not in (sha, None)]
+            if not changed:
+                continue
+            report(progress, i, len(todo), changed[0])
+            data, _lzss = unpack_info(cpk, by_id[eid])
+            leaves_new = {}
+            for fname in changed:
+                path = tuple(int(x) for x in Path(fname).stem.split('_')[1:])
+                try:
+                    leaf = _leaf(data, path)
+                    with Image.open(folder / fname) as img:
+                        img = img.convert('RGBA')
+                    if img.tobytes() == xtx_to_image(leaf).convert('RGBA').tobytes():
+                        continue                # se guardó de nuevo sin cambios
+                    leaves_new[path] = image_to_xtx(img, leaf)
+                    result.changed.append(fname)
+                except Exception as ex:
+                    result.errors.append(f"{fname}: {ex}")
+            if leaves_new:
+                new = replace_leaves(data, leaves_new)
+                replace[eid] = compress_yeti_lzss(new) if rec.get('lzss') else new
+        if result.errors:
+            return result
+        write_cpk(cpk, out_cpk, replace, cancel=cancel)
+    report(progress, 1, 1)
+    return result
+
+
+def pack_files(original_cpk, folder, out_cpk, progress=None, cancel=None) -> PackResult:
+    """
+    Crea out_cpk a partir de original_cpk con los archivos <id>.bin o <id>.hca de folder
+    que sean distintos del original (los extraídos con 'extract' o 'audio'). Los .bin están
+    descomprimidos: si el original llevaba LZSS de Yeti, se vuelve a comprimir.
+    """
+    folder = Path(folder)
+    result = PackResult()
+    replace = {}
+    with CPK(original_cpk) as cpk:
+        result.entries = len(cpk.entries)
+        for i, e in enumerate(cpk.entries):
+            check_cancel(cancel)
+            for ext in ('.bin', '.hca'):
+                path = folder / f"{e.id:05d}{ext}"
+                if path.exists():
+                    break
+            else:
+                continue
+            report(progress, i, len(cpk.entries), path.name)
+            new = path.read_bytes()
+            data, lzss = unpack_info(cpk, e)
+            if new != data:
+                replace[e.id] = compress_yeti_lzss(new) if lzss else new
+                result.changed.append(path.name)
+        write_cpk(cpk, out_cpk, replace, cancel=cancel)
+    report(progress, 1, 1)
     return result
 
 
@@ -261,3 +424,80 @@ def xtx_file_to_png(xtx_path, png_path, split: bool = False, png_level: int = 6)
             im.save(f, format='PNG', compress_level=png_level)
     return [path for path, _ in outputs]
 
+
+# =============================================================================
+# Audio
+# =============================================================================
+
+@dataclass
+class AudioResult:
+    files: int = 0
+    wav: int = 0
+    errors: List[str] = field(default_factory=list)
+
+
+def find_vgmstream() -> Optional[str]:
+    """vgmstream-cli (convierte HCA a WAV) si está en el PATH o junto a la herramienta."""
+    found = shutil.which('vgmstream-cli')
+    if found:
+        return found
+    base = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve().parent
+    local = base / 'vgmstream-cli.exe'
+    return str(local) if local.exists() else None
+
+
+def _to_wav(vgmstream: str, hca: Path) -> Optional[str]:
+    wav = hca.with_suffix('.wav')
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+    r = subprocess.run([vgmstream, '-o', str(wav), str(hca)], capture_output=True, creationflags=flags)
+    if r.returncode != 0 or not wav.exists():
+        return f"{hca.parent.name}/{hca.name}: vgmstream-cli falló ({r.returncode})"
+    return None
+
+
+def extract_audio(src, out_root, wav: bool = True, workers: Optional[int] = None,
+                  progress=None, cancel=None) -> AudioResult:
+    """
+    Guarda el audio de bgm, se y vo.cpk como <out_root>/<cpk>/<id>.hca y, con wav=True y
+    vgmstream-cli disponible, también como .wav.
+    """
+    cpks = find_cpks(src, audio=True)
+    if not cpks:
+        raise ValueError("No hay archivos de audio (bgm.cpk, se.cpk, vo.cpk)")
+    result = AudioResult()
+    written = []
+    total = 0
+    for cpk_path in cpks:
+        with CPK(cpk_path) as cpk:
+            total += len(cpk.entries)
+    i = 0
+    for cpk_path in cpks:
+        out_dir = Path(out_root) / cpk_path.stem
+        with CPK(cpk_path) as cpk:
+            for e in cpk.entries:
+                check_cancel(cancel)
+                report(progress, i, total, f"{cpk_path.stem}/{e.id:05d}.hca")
+                path = out_dir / f"{e.id:05d}.hca"
+                with atomic_write(path) as f:
+                    f.write(cpk.read(e))
+                written.append(path)
+                i += 1
+    result.files = len(written)
+
+    vgmstream = find_vgmstream() if wav else None
+    if vgmstream:
+        with ThreadPoolExecutor(max_workers=workers or default_workers()) as pool:
+            futures = [pool.submit(_to_wav, vgmstream, p) for p in written]
+            for k, fut in enumerate(futures):
+                if cancel is not None and cancel.is_set():
+                    for f in futures:
+                        f.cancel()
+                    check_cancel(cancel)
+                report(progress, k, len(futures), f"WAV: {written[k].parent.name}/{written[k].name}")
+                err = fut.result()
+                if err:
+                    result.errors.append(err)
+                else:
+                    result.wav += 1
+    report(progress, total, total)
+    return result
