@@ -7,6 +7,10 @@ build/
 dist/
 *.spec
 
+# Native libraries built from source (_crilayla.c)
+*.dll
+*.so
+
 # Temporary files written while packing
 *.tmp
 
@@ -14,3 +18,5 @@ dist/
 Pruebas/
 Traduccion/
 *.hcb
+*.cpk
+*.xtx
