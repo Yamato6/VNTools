@@ -8,6 +8,7 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 | [**FVP Tools**](fvp/) | Favorite View Point System | Hoshizora no Memoria, Irotoridori no Sekai, Astral Air… | `.bin` archives, `.nvsg` images, `.hcb` scripts |
 | [**Yeti Tools**](yeti-engine/) | Yeti/Regista | CROSS†CHANNEL -Final Complete- (PC) | `.cpk` archives, `.xtx` textures, `sn.bin` scripts, audio |
 | [**AdvHD Tools**](advhd-engine/) | AdvHD (WillPlus) | CROSS†CHANNEL (WillPlus edition, 2012) | `.arc` archives, WIPF images, `.wsc` scripts, audio |
+| [**NeXAS Tools**](nexas-engine/) | NeXAS (Giga) | Maji de Watashi ni Koi Shinasai! S | `.pac` archives, `.bin` scripts, `.dat` tables, images, audio, video |
 
 ## Features
 
@@ -39,15 +40,22 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 - Extract the music, sound effects and voices as `.ogg`
 - Parallel extraction at low priority that can be cancelled and resumed
 
+**NeXAS Tools** (`nexas-engine/`)
+- Browse a `.pac` archive, extract everything in the game in one step (images, audio, video, scripts, data tables) and resume an interrupted extraction
+- Extract the script text and rebuild it with your translation. **Translated lines can be any length**: the scripts refer to their strings by number. Each line can carry the English patch's text as a reference
+- Extract and rebuild the interface texts of the `.dat` tables
+- **Repack the edited files** (only the changed ones are re-encoded), into a full `.pac` or a small `UpdateN.pac` patch that the game loads on top of its own files
+- Convert FIL masks to PNG and back, NMV animations to PNG frames, and compose the character sprites (SPM)
+
 ## Quick start
 
 Requires Python 3.8 or newer.
 
 ```bash
 git clone https://github.com/Yamato6/VNTools.git
-cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine
+cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine, nexas-engine
 pip install -r requirements.txt
-python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py
+python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py, nexas_gui.py
 ```
 
 Running the command line tool without arguments also opens the GUI:
@@ -62,6 +70,7 @@ See each tool's README for every command and the file format documentation:
 - [fvp/README.md](fvp/README.md)
 - [yeti-engine/README.md](yeti-engine/README.md)
 - [advhd-engine/README.md](advhd-engine/README.md)
+- [nexas-engine/README.md](nexas-engine/README.md)
 
 ## Standalone executable
 
@@ -95,6 +104,16 @@ VNTools/
 │   ├── fvp_gui.py          graphical interface
 │   ├── charmap_es.txt      character table template
 │   └── build_exe.bat
+├── nexas-engine/         NeXAS Tools
+│   ├── nexas_pac.py        .pac archives
+│   ├── nexas_compress.py   Huffman and LZSS
+│   ├── nexas_script.py     script and table text
+│   ├── nexas_formats.py    FIL, NMV, SPM and DAT formats
+│   ├── nexas_extract.py    full extraction and repacking
+│   ├── nexas_common.py     shared helpers
+│   ├── nexas_tool.py       command line
+│   ├── nexas_gui.py        graphical interface
+│   └── build_exe.bat
 └── yeti-engine/          Yeti Tools
     ├── yeti_cpk.py         .cpk archives
     ├── yeti_utf.py         CRIWARE @UTF tables
@@ -114,6 +133,7 @@ VNTools/
 - HCB format research: binaryfail, akerou (original C++ tool)
 - WillPlus format reference: [vn-tools/arc_unpacker](https://github.com/vn-tools/arc_unpacker)
 - CPK and Yeti format references: see [yeti-engine/README.md](yeti-engine/README.md#credits)
+- NeXAS PAC format reference: [morkt/GARbro](https://github.com/morkt/GARbro)
 
 ## License
 
