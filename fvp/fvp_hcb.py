@@ -117,10 +117,10 @@ def parse_code(data: bytes, progress=None, cancel=None) -> Tuple[int, List[Instr
     Los argumentos de pushstring incluyen el byte de longitud.
     """
     if len(data) < 4:
-        raise ValueError("Archivo demasiado pequeño para ser un HCB")
+        raise ValueError("File too small to be an HCB")
     code_end = struct.unpack_from('<I', data, 0)[0]
     if code_end > len(data):
-        raise ValueError("Cabecera no válida: la sección de código supera el tamaño del archivo")
+        raise ValueError("Invalid header: the code section is larger than the file")
 
     sizes = [ARG_SIZES.get(t, 0) for _, _, t in HCB_OPCODES]
     instrs = []
@@ -185,16 +185,16 @@ class CharMap:
             if not line.strip() or line.lstrip().startswith('#'):
                 continue
             if '=' not in line[1:]:
-                raise ValueError(f"Tabla de caracteres, línea {num}: se esperaba 'original=reemplazo'")
+                raise ValueError(f"Character table, line {num}: expected 'original=replacement'")
             # El primer carácter puede ser '=' (p. ej. '==X')
             idx = line.index('=', 1)
             src, dst = line[:idx], line[idx + 1:]
             if not src or not dst:
-                raise ValueError(f"Tabla de caracteres, línea {num}: par vacío")
+                raise ValueError(f"Character table, line {num}: empty pair")
             try:
                 dst.encode('cp932', errors='strict')
             except UnicodeEncodeError:
-                raise ValueError(f"Tabla de caracteres, línea {num}: '{dst}' no existe en Shift-JIS")
+                raise ValueError(f"Character table, line {num}: '{dst}' does not exist in Shift-JIS")
             pairs[src] = dst
         return cls(pairs)
 
@@ -250,13 +250,13 @@ def read_strings_file(path) -> Tuple[Dict[int, Tuple[int, str]], List[str]]:
                 continue
             parts = line.split('|', 2)
             if len(parts) < 3:
-                warnings.append(f"Línea {line_num} no válida: {line[:50]}")
+                warnings.append(f"Invalid line {line_num}: {line[:50]}")
                 continue
             try:
                 sid = int(parts[0])
                 addr = int(parts[1], 16) if parts[1].lower().startswith('0x') else int(parts[1])
             except ValueError as e:
-                warnings.append(f"Error en la línea {line_num}: {e}")
+                warnings.append(f"Error on line {line_num}: {e}")
                 continue
             result[addr] = (sid, unescape_text(parts[2]))
     return result, warnings
@@ -385,12 +385,12 @@ def decompile(hcb_path, output_path, strings_path=None, charmap: Optional[CharMa
 # =============================================================================
 
 # Estados de un texto en el informe
-ST_GREW = 'creció'
-ST_SHRANK = 'se acortó'
-ST_CUT = 'cortado'
-ST_PADDED = 'rellenado'
-ST_UNSUPPORTED = 'caracteres no soportados'
-ST_REPLACED = 'caracteres reemplazados'
+ST_GREW = 'grew'
+ST_SHRANK = 'shrank'
+ST_CUT = 'cut'
+ST_PADDED = 'padded'
+ST_UNSUPPORTED = 'unsupported characters'
+ST_REPLACED = 'replaced characters'
 
 
 @dataclass
@@ -422,14 +422,14 @@ class RebuildReport:
         return sum(1 for e in self.entries if flag in e.flags)
 
     def summary(self) -> str:
-        parts = [f"{self.changed} textos modificados de {self.total_strings}"]
+        parts = [f"{self.changed} of {self.total_strings} lines changed"]
         for flag in (ST_GREW, ST_SHRANK, ST_CUT, ST_PADDED, ST_REPLACED, ST_UNSUPPORTED):
             n = self.count(flag)
             if n:
                 parts.append(f"{n} {flag}")
         if self.mode == 'reloc':
-            parts.append(f"{self.relocated_refs} referencias reubicadas")
-            parts.append(f"{self.function_pointers} punteros a función")
+            parts.append(f"{self.relocated_refs} references relocated")
+            parts.append(f"{self.function_pointers} function pointers")
         return ', '.join(parts)
 
 
@@ -455,28 +455,28 @@ def _encode_replacement(sid, addr, old_raw: bytes, text: str, charmap, max_bytes
         return bytes([len(old_raw)]) + old_raw, None
     if pad_to is not None and pad_to < 1:
         return bytes([len(old_raw)]) + old_raw, StringResult(
-            sid, addr, 0, 0, [ST_CUT], "el original no tiene espacio (0 bytes); se conserva")
+            sid, addr, 0, 0, [ST_CUT], "the original has no room (0 bytes); it is kept")
 
     flags, details = [], []
     if charmap:
         text, used = charmap.apply(text)
         if used:
             flags.append(ST_REPLACED)
-            details.append("reemplazados: " + ''.join(sorted(set(used))))
+            details.append("replaced: " + ''.join(sorted(set(used))))
 
     try:
         encoded = text.encode('cp932', errors='strict')
     except UnicodeEncodeError:
         bad = sorted({ch for ch in text if not _encodable(ch)})
         result = StringResult(sid, addr, len(old_raw), len(old_raw), [ST_UNSUPPORTED],
-                              "no existen en Shift-JIS: " + ''.join(bad) + " (se conserva el original)")
+                              "not in Shift-JIS: " + ''.join(bad) + " (the original is kept)")
         return bytes([len(old_raw)]) + old_raw, result
 
     limit = max_bytes if pad_to is None else pad_to - 1
     if len(encoded) > limit:
         encoded = _truncate_cp932(text, limit)
         flags.append(ST_CUT)
-        details.append(f"máximo {limit} bytes, se perdió: «{text[len(encoded.decode('cp932')):]}»")
+        details.append(f"maximum {limit} bytes, lost: \"{text[len(encoded.decode('cp932')):]}\"")
     if pad_to is not None and len(encoded) < pad_to - 1:
         encoded += b' ' * (pad_to - 1 - len(encoded))
         flags.append(ST_PADDED)
@@ -509,14 +509,14 @@ def rebuild(original_hcb, strings_path, output_hcb, charmap: Optional[CharMap] =
                   como la versión anterior de la herramienta.
     """
     if mode not in ('reloc', 'fixed'):
-        raise ValueError(f"Modo no válido: {mode}")
+        raise ValueError(f"Invalid mode: {mode}")
 
     data = Path(original_hcb).read_bytes()
     replacements, warnings = read_strings_file(strings_path)
     rep = RebuildReport(mode=mode, warnings=warnings, original_size=len(data))
 
     def parse_progress(i, total, name):
-        report(progress, i // 2, total, "Analizando…")
+        report(progress, i // 2, total, "Analyzing…")
     code_end, instrs = parse_code(data, parse_progress, cancel)
 
     functions = {addr for addr, op, _ in instrs if op == OP_INITSTACK}
@@ -532,7 +532,7 @@ def rebuild(original_hcb, strings_path, output_hcb, charmap: Optional[CharMap] =
     for i, (addr, op, arg) in enumerate(instrs):
         if i % step == 0:
             check_cancel(cancel)
-            report(progress, total // 2 + i // 2, total, "Reconstruyendo…")
+            report(progress, total // 2 + i // 2, total, "Rebuilding…")
         addr_map[addr] = len(out)
         if op == RAW:
             out += arg
@@ -568,7 +568,7 @@ def rebuild(original_hcb, strings_path, output_hcb, charmap: Optional[CharMap] =
     addr_map[code_end] = new_code_end
 
     if mode == 'fixed' and new_code_end != code_end:
-        raise RuntimeError("Error interno: el modo de tamaño fijo cambió el tamaño del código")
+        raise RuntimeError("Internal error: fixed-size mode changed the code size")
 
     if mode == 'reloc':
         for offset, target, is_jump in patches:
@@ -576,8 +576,8 @@ def rebuild(original_hcb, strings_path, output_hcb, charmap: Optional[CharMap] =
             if new is None:
                 if is_jump:
                     raise ValueError(
-                        f"Un salto en 0x{offset:08X} apunta a 0x{target:08X}, que no es el inicio de "
-                        "una instrucción. No se puede reubicar este script; usa el modo de tamaño fijo.")
+                        f"A jump at 0x{offset:08X} points to 0x{target:08X}, which is not the start of "
+                        "an instruction. This script cannot be relocated; use fixed-size mode.")
                 continue
             struct.pack_into('<I', out, offset, new)
             if is_jump:
@@ -596,11 +596,11 @@ def rebuild(original_hcb, strings_path, output_hcb, charmap: Optional[CharMap] =
             rep.entry_point_relocated = True
         else:
             rep.warnings.append(
-                f"El primer valor del sysdesc (0x{entry:08X}) no apunta a una función; no se modificó. "
-                "Si el juego no arranca, prueba el modo de tamaño fijo.")
+                f"The first sysdesc value (0x{entry:08X}) does not point to a function; it was not changed. "
+                "If the game does not start, try fixed-size mode.")
 
     if rep.raw_bytes:
-        rep.warnings.append(f"{rep.raw_bytes} bytes no reconocidos como opcodes se copiaron tal cual")
+        rep.warnings.append(f"{rep.raw_bytes} bytes not recognized as opcodes were copied unchanged")
 
     out += sysdesc
     rep.new_size = len(out)
@@ -635,19 +635,19 @@ def split_strings(strings_path) -> List[str]:
     )
     parts = part_pattern.findall(content)
     if not parts:
-        raise ValueError(f"No hay etiquetas <part> en {strings_path.name}. Formato: "
-                         '<part name="Nombre" filename="salida.txt">...textos...</part>')
+        raise ValueError(f"There are no <part> tags in {strings_path.name}. Format: "
+                         '<part name="Name" filename="output.txt">...lines...</part>')
 
     messages = []
     for name, filename, part_content in parts:
         if not filename:
-            messages.append(f"[AVISO] La parte '{name}' no tiene filename, se omite")
+            messages.append(f"[WARNING] Part '{name}' has no filename, skipped")
             continue
         output_file = base_dir / filename
         output_file.parent.mkdir(parents=True, exist_ok=True)
         lines = [line.strip() for line in part_content.strip().split('\n') if line.strip()]
         output_file.write_text(f"# Part: {name}\n" + '\n'.join(lines) + '\n', encoding='utf-8')
-        messages.append(f"Creado: {filename} ({len(lines)} líneas)")
+        messages.append(f"Created: {filename} ({len(lines)} lines)")
     return messages
 
 
@@ -669,20 +669,20 @@ def merge_strings(build_script_path, output_path) -> Tuple[int, List[str]]:
             if line and not line.startswith('#') and not line.startswith('<'):
                 files_to_merge.append(line)
     if not files_to_merge:
-        raise ValueError(f"No hay archivos en el script de build {build_script_path.name}")
+        raise ValueError(f"There are no files in the build script {build_script_path.name}")
 
     all_strings, messages = [], []
     for filename in files_to_merge:
         file_path = base_dir / filename
         if not file_path.exists():
-            messages.append(f"[AVISO] No existe: {filename}")
+            messages.append(f"[WARNING] Not found: {filename}")
             continue
         with open(file_path, 'r', encoding='utf-8-sig') as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
                     all_strings.append(line)
-        messages.append(f"Unido: {filename}")
+        messages.append(f"Merged: {filename}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(f"# Merged from {len(files_to_merge)} files\n" + '\n'.join(all_strings) + '\n',

@@ -26,7 +26,7 @@ FORMAT_NAMES = {
     0: 'BGR 24-bit',
     1: 'BGRA 32-bit',
     2: 'BGRA multi-frame',
-    3: 'Escala de grises',
+    3: 'Grayscale',
 }
 
 
@@ -55,9 +55,9 @@ def is_nvsg(data: bytes) -> bool:
 def parse_header(data: bytes) -> NVSGHeader:
     """Lee las cabeceras hzc1 + NVSG de los primeros 44 bytes."""
     if data[:4] != b'hzc1':
-        raise ValueError(f"No es un archivo NVSG válido (magic: {data[:4]!r})")
+        raise ValueError(f"Not a valid NVSG file (magic: {data[:4]!r})")
     if data[12:16] != b'NVSG':
-        raise ValueError("Falta la cabecera NVSG")
+        raise ValueError("The NVSG header is missing")
     (_always_256, fmt, width, height, x, y, unk1, unk2,
      image_count, unk3, unk4) = struct.unpack_from('<HHHHHHHHIII', data, 16)
     return NVSGHeader(fmt, width, height, x, y, unk1, unk2, image_count, unk3, unk4)
@@ -82,7 +82,7 @@ def decode_bytes(data: bytes) -> Tuple[Image.Image, NVSGHeader]:
     elif h.fmt == 3:    # Escala de grises
         img = Image.frombytes('L', (h.width, h.height), pixels)
     else:
-        raise ValueError(f"Formato no soportado: {h.fmt}")
+        raise ValueError(f"Unsupported format: {h.fmt}")
     return img, h
 
 
@@ -116,7 +116,7 @@ def encode(png_path, nvsg_path, x: int, y: int, image_count: int = 1,
 
     if fmt == 2:
         if height % frames:
-            raise ValueError(f"La altura ({height}) no es múltiplo del número de frames ({frames})")
+            raise ValueError(f"The height ({height}) is not a multiple of the frame count ({frames})")
         height //= frames
         data = img.convert('RGBA').tobytes('raw', 'BGRA')
     elif fmt == 1:
@@ -126,7 +126,7 @@ def encode(png_path, nvsg_path, x: int, y: int, image_count: int = 1,
     elif fmt == 0:
         data = img.convert('RGB').tobytes('raw', 'BGR')
     else:
-        raise ValueError(f"Formato no soportado: {fmt}")
+        raise ValueError(f"Unsupported format: {fmt}")
 
     compressed = zlib.compress(data, level=9)
     header = NVSGHeader(fmt, width, height, x, y, unk[0], unk[1], image_count, unk[2], unk[3])
@@ -217,7 +217,7 @@ def batch_encode(input_folder, output_folder, log_path, progress=None,
     output_folder.mkdir(parents=True, exist_ok=True)
     log_map = read_log(log_path)
     if not log_map:
-        raise ValueError("El log está vacío o no es válido")
+        raise ValueError("The log is empty or invalid")
 
     files = sorted(input_folder.glob('*.png'))
     done, missing = 0, []

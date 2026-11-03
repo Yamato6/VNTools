@@ -43,17 +43,17 @@ def read_index(arc_path) -> List[ArcEntry]:
     with open(arc_path, 'rb') as f:
         head = f.read(4)
         if len(head) < 4:
-            raise ValueError("Archivo demasiado pequeño")
+            raise ValueError("File too small")
         (n_types,) = struct.unpack('<I', head)
         if not 0 < n_types < 256:
-            raise ValueError("No es un archivo .arc de AdvHD")
+            raise ValueError("Not an AdvHD .arc file")
         raw = f.read(12 * n_types)
         types = []
         for i in range(n_types):
             r = raw[i * 12:i * 12 + 12]
             ext = r[:4].rstrip(b'\0')
             if len(r) < 12 or not ext.isalnum():
-                raise ValueError("No es un archivo .arc de AdvHD")
+                raise ValueError("Not an AdvHD .arc file")
             types.append((ext.decode('ascii'),) + struct.unpack_from('<II', r, 4))
 
         entries = []
@@ -61,13 +61,13 @@ def read_index(arc_path) -> List[ArcEntry]:
             f.seek(off)
             tab = f.read(count * ENTRY_SIZE)
             if len(tab) != count * ENTRY_SIZE:
-                raise ValueError(f"Tabla de {ext} truncada")
+                raise ValueError(f"Truncated {ext} table")
             for j in range(count):
                 p = j * ENTRY_SIZE
                 name = tab[p:p + NAME_SIZE].split(b'\0')[0].decode('cp932', errors='replace')
                 size, offset = struct.unpack_from('<II', tab, p + NAME_SIZE)
                 if offset + size > file_size:
-                    raise ValueError(f"Entrada fuera del archivo: {name}.{ext}")
+                    raise ValueError(f"Entry outside the file: {name}.{ext}")
                 entries.append(ArcEntry(name, ext, size, offset))
     return entries
 
@@ -77,7 +77,7 @@ def read_entry(f, entry: ArcEntry) -> bytes:
     f.seek(entry.offset)
     data = f.read(entry.size)
     if len(data) != entry.size:
-        raise ValueError(f"Datos truncados: {entry.filename}")
+        raise ValueError(f"Truncated data: {entry.filename}")
     return data
 
 
@@ -88,7 +88,7 @@ def read_entry(f, entry: ArcEntry) -> bytes:
 def encode_name(name: str) -> bytes:
     raw = name.encode('cp932')
     if len(raw) > NAME_SIZE - 1:
-        raise ValueError(f"Nombre demasiado largo (máximo {NAME_SIZE - 1} bytes): {name}")
+        raise ValueError(f"Name too long (maximum {NAME_SIZE - 1} bytes): {name}")
     return raw
 
 
@@ -119,7 +119,7 @@ def write_arc(arc_path, items, progress=None, cancel=None) -> int:
     for name, ext, _src in items:
         types.setdefault(ext, []).append(name)
     if len(types) > 255:
-        raise ValueError("Demasiados tipos de archivo")
+        raise ValueError("Too many file types")
     sizes = [len(src) if isinstance(src, (bytes, bytearray)) else Path(src).stat().st_size
              for _n, _e, src in items]
 
@@ -153,8 +153,8 @@ def pack(folder, arc_path, progress=None, cancel=None) -> int:
     """Empaqueta los archivos NOMBRE.ext de una carpeta en un .arc. Devuelve la cantidad."""
     files = collect_files(folder)
     if not files:
-        raise ValueError("No hay archivos que empaquetar")
+        raise ValueError("There are no files to pack")
     folder, arc_path = Path(folder).resolve(), Path(arc_path).resolve()
     if folder in arc_path.parents:
-        raise ValueError("El .arc de salida no puede estar dentro de la carpeta de entrada")
+        raise ValueError("The output .arc cannot be inside the input folder")
     return write_arc(arc_path, files, progress, cancel)

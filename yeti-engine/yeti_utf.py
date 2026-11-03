@@ -46,7 +46,7 @@ class UTFTable:
         if buf[:4] != b'@UTF':
             buf = decrypt_utf(buf)
             if buf[:4] != b'@UTF':
-                raise ValueError("No es una tabla @UTF")
+                raise ValueError("Not a @UTF table")
         self.buf = buf
         (_size, rows_off, str_off, data_off, name_off,
          ncols, row_len, nrows) = struct.unpack_from('>IIIIIHHI', buf, 4)
@@ -109,7 +109,7 @@ class UTFTable:
             o, n = struct.unpack_from('>II', b, p)
             s = self.data_off + o
             return bytes(b[s:s + n]), p + 8
-        raise ValueError(f"Tipo de columna desconocido: {t:#x}")
+        raise ValueError(f"Unknown column type: {t:#x}")
 
 
 # =============================================================================
@@ -149,7 +149,7 @@ def write_table(name: str, columns, rows) -> bytes:
             off = len(blobs)
             blobs.extend(v)
             return struct.pack('>II', off, len(v))
-        raise ValueError(f"Tipo de columna desconocido: {t:#x}")
+        raise ValueError(f"Unknown column type: {t:#x}")
 
     name_off = add_string(name)
     col_defs = bytearray()

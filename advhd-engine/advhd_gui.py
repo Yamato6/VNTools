@@ -25,7 +25,7 @@ from advhd_common import Cancelled
 APP_TITLE = "AdvHD Tools"
 PREVIEW_SIZE = (360, 270)
 PREVIEW_INTERVAL = 0.5      # segundos entre actualizaciones de la vista previa
-ALL_TYPES = "Todos"
+ALL_TYPES = "All"
 
 
 def format_size(size: int) -> str:
@@ -90,14 +90,14 @@ class App(ctk.CTk):
 
         self.tabs = ctk.CTkTabview(self)
         self.tabs.grid(row=0, column=0, sticky="nsew", padx=12, pady=(6, 0))
-        self._build_images_tab(self.tabs.add("Imágenes"))
-        self._build_repack_tab(self.tabs.add("Reempaquetar"))
-        self._build_scripts_tab(self.tabs.add("Guiones"))
+        self._build_images_tab(self.tabs.add("Images"))
+        self._build_repack_tab(self.tabs.add("Repack"))
+        self._build_scripts_tab(self.tabs.add("Scripts"))
         self._build_audio_tab(self.tabs.add("Audio"))
-        self._build_arc_tab(self.tabs.add("Archivos ARC"))
+        self._build_arc_tab(self.tabs.add("ARC Files"))
         self._build_status_bar()
 
-    def _path_row(self, tab, row, label, var, command, button="Elegir…"):
+    def _path_row(self, tab, row, label, var, command, button="Browse…"):
         """Fila etiqueta + campo + botón."""
         ctk.CTkLabel(tab, text=label).grid(row=row, column=0, sticky="w", padx=(4, 8), pady=6)
         ctk.CTkEntry(tab, textvariable=var).grid(row=row, column=1, sticky="ew", pady=6)
@@ -114,19 +114,19 @@ class App(ctk.CTk):
         self.rp_arc_var = tk.StringVar()
         self.rp_dir_var = tk.StringVar()
         self.rp_out_var = tk.StringVar()
-        self._path_row(tab, 0, ".arc original:", self.rp_arc_var,
-                       lambda: self._ask_open(self.rp_arc_var, "Archivo .arc original", self._rp_defaults))
-        self._path_row(tab, 1, "Carpeta de imágenes:", self.rp_dir_var,
-                       lambda: self._ask_dir(self.rp_dir_var, "Carpeta con las imágenes extraídas"))
-        self._note(tab, 2, "La carpeta de la extracción (o la de ese .arc dentro de ella). Solo se "
-                           "vuelven a codificar\nlas imágenes que editaste; el resto se copia del original.")
-        self._path_row(tab, 3, ".arc de salida:", self.rp_out_var,
-                       lambda: self._ask_save(self.rp_out_var, "Guardar .arc"), "Guardar como…")
+        self._path_row(tab, 0, "Original .arc:", self.rp_arc_var,
+                       lambda: self._ask_open(self.rp_arc_var, "Original .arc file", self._rp_defaults))
+        self._path_row(tab, 1, "Images folder:", self.rp_dir_var,
+                       lambda: self._ask_dir(self.rp_dir_var, "Folder with the extracted images"))
+        self._note(tab, 2, "The extraction output folder (or that .arc's folder inside it). Only the images you "
+                           "edited\nare re-encoded; everything else is copied from the original.")
+        self._path_row(tab, 3, "Output .arc:", self.rp_out_var,
+                       lambda: self._ask_save(self.rp_out_var, "Save .arc"), "Save as…")
         self.resize_var = tk.BooleanVar(value=False)
-        cb = ctk.CTkCheckBox(tab, text="Permitir imágenes con otro tamaño que el original",
+        cb = ctk.CTkCheckBox(tab, text="Allow images with a different size than the original",
                              variable=self.resize_var)
         cb.grid(row=4, column=1, sticky="w", pady=6)
-        btn = ctk.CTkButton(tab, text="Crear .arc", width=160, command=self.start_repack)
+        btn = ctk.CTkButton(tab, text="Create .arc", width=160, command=self.start_repack)
         btn.grid(row=5, column=2, sticky="e", padx=4, pady=(18, 0))
         self.busy_widgets += [cb, btn]
 
@@ -138,33 +138,33 @@ class App(ctk.CTk):
         self.charmap_var = tk.StringVar()
         self.rio_out_var = tk.StringVar()
         self._path_row(tab, 0, "Rio.arc:", self.rio_var,
-                       lambda: self._ask_open(self.rio_var, "Archivo de guiones (Rio.arc)", self._rio_defaults))
-        self._path_row(tab, 1, "Carpeta de textos:", self.txt_dir_var,
-                       lambda: self._ask_dir(self.txt_dir_var, "Carpeta de textos"))
-        self._path_row(tab, 2, "Tabla de caracteres:", self.charmap_var,
-                       lambda: self._ask_open(self.charmap_var, "Tabla de caracteres (opcional)",
-                                              types=[("Texto", "*.txt"), ("Todos", "*.*")]))
-        self._note(tab, 3, "Opcional: para letras que no existen en Shift-JIS (ñ, á…) con una fuente propia.")
+                       lambda: self._ask_open(self.rio_var, "Script archive (Rio.arc)", self._rio_defaults))
+        self._path_row(tab, 1, "Text folder:", self.txt_dir_var,
+                       lambda: self._ask_dir(self.txt_dir_var, "Text folder"))
+        self._path_row(tab, 2, "Character table:", self.charmap_var,
+                       lambda: self._ask_open(self.charmap_var, "Character table (optional)",
+                                              types=[("Text", "*.txt"), ("All", "*.*")]))
+        self._note(tab, 3, "Optional: for letters that Shift-JIS lacks (ñ, á…), used with a custom font.")
 
         row = ctk.CTkFrame(tab, fg_color="transparent")
         row.grid(row=4, column=1, columnspan=2, sticky="ew", pady=6)
         self.listing_var = tk.BooleanVar(value=False)
-        cb = ctk.CTkCheckBox(row, text="Guardar también el listado completo de cada guion",
+        cb = ctk.CTkCheckBox(row, text="Also save the full listing of each script",
                              variable=self.listing_var)
         cb.pack(side="left")
-        btn = ctk.CTkButton(row, text="Extraer textos", width=140, command=self.start_wsc_strings)
+        btn = ctk.CTkButton(row, text="Extract text", width=140, command=self.start_wsc_strings)
         btn.pack(side="right", padx=(8, 4))
         self.busy_widgets += [cb, btn]
 
-        self._path_row(tab, 5, "Rio.arc de salida:", self.rio_out_var,
-                       lambda: self._ask_save(self.rio_out_var, "Guardar Rio.arc"), "Guardar como…")
+        self._path_row(tab, 5, "Output Rio.arc:", self.rio_out_var,
+                       lambda: self._ask_save(self.rio_out_var, "Save Rio.arc"), "Save as…")
         row = ctk.CTkFrame(tab, fg_color="transparent")
         row.grid(row=6, column=1, columnspan=2, sticky="ew", pady=6)
         self.fixed_var = tk.BooleanVar(value=False)
-        cb = ctk.CTkCheckBox(row, text="Tamaño fijo (cada texto conserva su tamaño original)",
+        cb = ctk.CTkCheckBox(row, text="Fixed size (each text keeps its original size)",
                              variable=self.fixed_var)
         cb.pack(side="left")
-        btn = ctk.CTkButton(row, text="Reconstruir", width=140, command=self.start_wsc_rebuild)
+        btn = ctk.CTkButton(row, text="Rebuild", width=140, command=self.start_wsc_rebuild)
         btn.pack(side="right", padx=(8, 4))
         self.busy_widgets += [cb, btn]
 
@@ -176,21 +176,21 @@ class App(ctk.CTk):
         tab.grid_columnconfigure(1, weight=1)
         self.au_src_var = tk.StringVar()
         self.au_out_var = tk.StringVar()
-        self._path_row(tab, 0, "Carpeta del juego:", self.au_src_var, self._au_browse)
-        self._path_row(tab, 1, "Destino:", self.au_out_var,
-                       lambda: self._ask_dir(self.au_out_var, "Carpeta de destino"))
-        self._note(tab, 2, "Copia los OGG de Bgm.arc, Se.arc y Voice.arc (casi 600 MB) en una carpeta por "
-                           "archivo.\nPara volver a crear un .arc de audio usa «Empaquetar carpeta…» en "
-                           "Archivos ARC.")
-        btn = ctk.CTkButton(tab, text="Extraer audio", width=160, command=self.start_audio)
+        self._path_row(tab, 0, "Game folder:", self.au_src_var, self._au_browse)
+        self._path_row(tab, 1, "Output:", self.au_out_var,
+                       lambda: self._ask_dir(self.au_out_var, "Output folder"))
+        self._note(tab, 2, "Copies the OGG files of Bgm.arc, Se.arc and Voice.arc (almost 600 MB), one folder per "
+                           "archive.\nTo build an audio .arc again, use \"Pack folder…\" in the "
+                           "ARC Files tab.")
+        btn = ctk.CTkButton(tab, text="Extract audio", width=160, command=self.start_audio)
         btn.grid(row=3, column=2, sticky="e", padx=4, pady=(18, 0))
         self.busy_widgets.append(btn)
 
     # ------------------------------------------------- Diálogos comunes
 
     def _ask_open(self, var, title, then=None, types=None):
-        path = filedialog.askopenfilename(title=title, filetypes=types or [("Archivos ARC", "*.arc"),
-                                                                           ("Todos", "*.*")])
+        path = filedialog.askopenfilename(title=title, filetypes=types or [("ARC files", "*.arc"),
+                                                                           ("All", "*.*")])
         if path:
             var.set(path)
             if then:
@@ -202,25 +202,25 @@ class App(ctk.CTk):
             var.set(path)
 
     def _ask_save(self, var, title):
-        initial = Path(var.get() or "nuevo.arc")
+        initial = Path(var.get() or "new.arc")
         path = filedialog.asksaveasfilename(title=title, defaultextension=".arc",
                                             initialdir=str(initial.parent) if initial.parent.exists() else None,
                                             initialfile=initial.name,
-                                            filetypes=[("Archivos ARC", "*.arc"), ("Todos", "*.*")])
+                                            filetypes=[("ARC files", "*.arc"), ("All", "*.*")])
         if path:
             var.set(path)
 
     def _confirm_overwrite(self, out_path, source) -> bool:
         out, src = Path(out_path).resolve(), Path(source).resolve()
         if out == src:
-            messagebox.showwarning(APP_TITLE, "La salida no puede ser el archivo original.")
+            messagebox.showwarning(APP_TITLE, "The output cannot be the original file.")
             return False
-        return not out.exists() or messagebox.askyesno(APP_TITLE, f"{out.name} ya existe.\n¿Sobrescribirlo?")
+        return not out.exists() or messagebox.askyesno(APP_TITLE, f"{out.name} already exists.\nOverwrite it?")
 
     def _rp_defaults(self, path):
         p = Path(path)
         if not self.rp_out_var.get():
-            self.rp_out_var.set(str(p.parent.parent / f"{p.parent.name}_nuevo" / p.name))
+            self.rp_out_var.set(str(p.parent.parent / f"{p.parent.name}_new" / p.name))
         if not self.rp_dir_var.get() and self.img_out_var.get():
             self.rp_dir_var.set(self.img_out_var.get())
 
@@ -228,12 +228,12 @@ class App(ctk.CTk):
         p = Path(path)
         game = p.parent
         if not self.txt_dir_var.get():
-            self.txt_dir_var.set(str(game.parent / f"{game.name}_textos"))
+            self.txt_dir_var.set(str(game.parent / f"{game.name}_text"))
         if not self.rio_out_var.get():
-            self.rio_out_var.set(str(game.parent / f"{game.name}_nuevo" / p.name))
+            self.rio_out_var.set(str(game.parent / f"{game.name}_new" / p.name))
 
     def _au_browse(self):
-        path = filedialog.askdirectory(title="Carpeta del juego")
+        path = filedialog.askdirectory(title="Game folder")
         if path:
             self.au_src_var.set(path)
             if not self.au_out_var.get():
@@ -244,7 +244,7 @@ class App(ctk.CTk):
         tab.grid_rowconfigure(5, weight=1)
 
         self.src_var = tk.StringVar()
-        ctk.CTkLabel(tab, text="Carpeta del juego o .arc:").grid(row=0, column=0, sticky="w",
+        ctk.CTkLabel(tab, text="Game folder or .arc:").grid(row=0, column=0, sticky="w",
                                                                  padx=(4, 8), pady=6)
         src_entry = ctk.CTkEntry(tab, textvariable=self.src_var)
         src_entry.grid(row=0, column=1, sticky="ew", pady=6)
@@ -252,7 +252,7 @@ class App(ctk.CTk):
         src_entry.bind("<FocusOut>", lambda _e: self._update_images_info())
         btns = ctk.CTkFrame(tab, fg_color="transparent")
         btns.grid(row=0, column=2, padx=(8, 4), pady=6)
-        b1 = ctk.CTkButton(btns, text="Carpeta…", width=80, command=self.browse_src_dir)
+        b1 = ctk.CTkButton(btns, text="Folder…", width=80, command=self.browse_src_dir)
         b1.pack(side="left")
         b2 = ctk.CTkButton(btns, text=".arc…", width=60, command=self.browse_src_arc)
         b2.pack(side="left", padx=(6, 0))
@@ -262,9 +262,9 @@ class App(ctk.CTk):
         self.src_info.grid(row=1, column=1, columnspan=2, sticky="ew")
 
         self.img_out_var = tk.StringVar()
-        ctk.CTkLabel(tab, text="Destino:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=6)
+        ctk.CTkLabel(tab, text="Output:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=6)
         ctk.CTkEntry(tab, textvariable=self.img_out_var).grid(row=2, column=1, sticky="ew", pady=6)
-        btn = ctk.CTkButton(tab, text="Elegir…", width=146, command=self.browse_img_out)
+        btn = ctk.CTkButton(tab, text="Browse…", width=146, command=self.browse_img_out)
         btn.grid(row=2, column=2, padx=(8, 4), pady=6)
         self.busy_widgets.append(btn)
 
@@ -273,14 +273,14 @@ class App(ctk.CTk):
         self.resume_var = tk.BooleanVar(value=True)
         self.audio_var = tk.BooleanVar(value=False)
         self.no_alpha_var = tk.BooleanVar(value=False)
-        cb1 = ctk.CTkCheckBox(opts, text="Reanudar", variable=self.resume_var)
+        cb1 = ctk.CTkCheckBox(opts, text="Resume", variable=self.resume_var)
         cb1.pack(side="left")
-        cb2 = ctk.CTkCheckBox(opts, text="Incluir audio", variable=self.audio_var,
+        cb2 = ctk.CTkCheckBox(opts, text="Include audio", variable=self.audio_var,
                               command=self._update_images_info)
         cb2.pack(side="left", padx=(16, 0))
-        cb3 = ctk.CTkCheckBox(opts, text="Sin componer alfa", variable=self.no_alpha_var)
+        cb3 = ctk.CTkCheckBox(opts, text="Don't merge alpha", variable=self.no_alpha_var)
         cb3.pack(side="left", padx=(16, 0))
-        ctk.CTkLabel(opts, text="Procesos:").pack(side="left", padx=(16, 6))
+        ctk.CTkLabel(opts, text="Workers:").pack(side="left", padx=(16, 6))
         cores = os.cpu_count() or 1
         self.workers_var = tk.StringVar(value=str(advhd_extract.default_workers()))
         om = ctk.CTkOptionMenu(opts, values=[str(n) for n in range(1, cores + 1)], width=70,
@@ -288,10 +288,10 @@ class App(ctk.CTk):
         om.pack(side="left")
         self.busy_widgets += [cb1, cb2, cb3, om]
 
-        btn = ctk.CTkButton(tab, text="Extraer imágenes", width=160, command=self.start_images)
+        btn = ctk.CTkButton(tab, text="Extract images", width=160, command=self.start_images)
         btn.grid(row=4, column=2, sticky="e", padx=4, pady=(6, 0))
         self.busy_widgets.append(btn)
-        ctk.CTkLabel(tab, text="Las imágenes con máscara (MSK) se guardan como PNG con transparencia.",
+        ctk.CTkLabel(tab, text="Images with a mask (MSK) are saved as PNG with transparency.",
                      anchor="w", text_color=("gray35", "gray65")) \
             .grid(row=4, column=1, sticky="w", pady=(6, 0))
 
@@ -303,25 +303,25 @@ class App(ctk.CTk):
         tab.grid_rowconfigure(3, weight=1)
 
         self.arc_var = tk.StringVar()
-        ctk.CTkLabel(tab, text="Archivo .arc:").grid(row=0, column=0, sticky="w", padx=(4, 8), pady=4)
+        ctk.CTkLabel(tab, text=".arc file:").grid(row=0, column=0, sticky="w", padx=(4, 8), pady=4)
         arc_entry = ctk.CTkEntry(tab, textvariable=self.arc_var)
         arc_entry.grid(row=0, column=1, sticky="ew", pady=4)
         arc_entry.bind("<Return>", lambda _e: self.load_arc(self.arc_var.get()))
-        btn = ctk.CTkButton(tab, text="Abrir…", width=100, command=self.browse_arc)
+        btn = ctk.CTkButton(tab, text="Open…", width=100, command=self.browse_arc)
         btn.grid(row=0, column=2, padx=(8, 4), pady=4)
         self.busy_widgets.append(btn)
 
-        self.arc_info = ctk.CTkLabel(tab, text="Ningún archivo abierto", anchor="w",
+        self.arc_info = ctk.CTkLabel(tab, text="No file open", anchor="w",
                                      text_color=("gray35", "gray65"))
         self.arc_info.grid(row=1, column=0, columnspan=3, sticky="ew", padx=4)
 
         self.filter_var = tk.StringVar()
         self.filter_var.trace_add("write", lambda *_: self._refresh_tree())
-        ctk.CTkLabel(tab, text="Filtrar:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=4)
+        ctk.CTkLabel(tab, text="Filter:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=4)
         filt = ctk.CTkFrame(tab, fg_color="transparent")
         filt.grid(row=2, column=1, columnspan=2, sticky="ew", padx=(0, 4), pady=4)
         filt.grid_columnconfigure(0, weight=1)
-        ctk.CTkEntry(filt, textvariable=self.filter_var, placeholder_text="nombre contiene…") \
+        ctk.CTkEntry(filt, textvariable=self.filter_var, placeholder_text="name contains…") \
             .grid(row=0, column=0, sticky="ew")
         self.type_var = tk.StringVar(value=ALL_TYPES)
         self.type_menu = ctk.CTkOptionMenu(filt, values=[ALL_TYPES], width=100, variable=self.type_var,
@@ -335,9 +335,9 @@ class App(ctk.CTk):
 
         self.tree = ttk.Treeview(tree_frame, columns=("type", "size"), selectmode="extended",
                                  style="AdvHD.Treeview")
-        self.tree.heading("#0", text="Nombre", anchor="w")
-        self.tree.heading("type", text="Tipo", anchor="w")
-        self.tree.heading("size", text="Tamaño", anchor="e")
+        self.tree.heading("#0", text="Name", anchor="w")
+        self.tree.heading("type", text="Type", anchor="w")
+        self.tree.heading("size", text="Size", anchor="e")
         self.tree.column("#0", stretch=True, width=400)
         self.tree.column("type", stretch=False, width=80, anchor="w")
         self.tree.column("size", stretch=False, width=110, anchor="e")
@@ -348,9 +348,9 @@ class App(ctk.CTk):
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self._update_selection_label())
 
         self.raw_out_var = tk.StringVar()
-        ctk.CTkLabel(tab, text="Destino:").grid(row=4, column=0, sticky="w", padx=(4, 8), pady=4)
+        ctk.CTkLabel(tab, text="Output:").grid(row=4, column=0, sticky="w", padx=(4, 8), pady=4)
         ctk.CTkEntry(tab, textvariable=self.raw_out_var).grid(row=4, column=1, sticky="ew", pady=4)
-        btn = ctk.CTkButton(tab, text="Elegir…", width=100, command=self.browse_raw_out)
+        btn = ctk.CTkButton(tab, text="Browse…", width=100, command=self.browse_raw_out)
         btn.grid(row=4, column=2, padx=(8, 4), pady=4)
         self.busy_widgets.append(btn)
 
@@ -358,17 +358,17 @@ class App(ctk.CTk):
         actions.grid(row=5, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
         self.sel_label = ctk.CTkLabel(actions, text="", text_color=("gray35", "gray65"))
         self.sel_label.pack(side="left")
-        btn_all = ctk.CTkButton(actions, text="Extraer todo", command=lambda: self.start_raw(False))
+        btn_all = ctk.CTkButton(actions, text="Extract all", command=lambda: self.start_raw(False))
         btn_all.pack(side="right")
-        btn_sel = ctk.CTkButton(actions, text="Extraer seleccionados",
+        btn_sel = ctk.CTkButton(actions, text="Extract selected",
                                 command=lambda: self.start_raw(True))
         btn_sel.pack(side="right", padx=8)
-        btn_pack = ctk.CTkButton(actions, text="Empaquetar carpeta…", fg_color="gray40",
+        btn_pack = ctk.CTkButton(actions, text="Pack folder…", fg_color="gray40",
                                  hover_color="gray30", command=self.start_pack)
         btn_pack.pack(side="right", padx=(0, 8))
         self.busy_widgets += [btn_all, btn_sel, btn_pack]
 
-        ctk.CTkLabel(tab, text="Los archivos se guardan tal cual (los WIP y MSK siguen en formato WIPF).",
+        ctk.CTkLabel(tab, text="Files are saved as they are (WIP and MSK files stay in WIPF format).",
                      anchor="w", text_color=("gray35", "gray65")) \
             .grid(row=6, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
 
@@ -381,22 +381,22 @@ class App(ctk.CTk):
         self.progress.set(0)
         self.progress.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 4))
 
-        self.status = ctk.CTkLabel(bar, text="Listo", anchor="w")
+        self.status = ctk.CTkLabel(bar, text="Ready", anchor="w")
         self.status.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 8))
 
-        self.cancel_btn = ctk.CTkButton(bar, text="Cancelar", width=90, state="disabled",
+        self.cancel_btn = ctk.CTkButton(bar, text="Cancel", width=90, state="disabled",
                                         fg_color="#b23b3b", hover_color="#8f2f2f",
                                         command=self.cancel_task)
         self.cancel_btn.grid(row=0, column=2, rowspan=2, padx=(0, 10))
 
-        theme = ctk.CTkOptionMenu(bar, values=["Sistema", "Claro", "Oscuro"], width=100,
+        theme = ctk.CTkOptionMenu(bar, values=["System", "Light", "Dark"], width=100,
                                   command=self._change_theme)
         theme.grid(row=0, column=3, rowspan=2, padx=(0, 10))
 
     # --------------------------------------------------------------- Tema
 
     def _change_theme(self, value):
-        ctk.set_appearance_mode({"Sistema": "system", "Claro": "light", "Oscuro": "dark"}[value])
+        ctk.set_appearance_mode({"System": "system", "Light": "light", "Dark": "dark"}[value])
         self.after(10, self._apply_tree_style)
 
     def _apply_tree_style(self):
@@ -415,13 +415,13 @@ class App(ctk.CTk):
     # ------------------------------------------------------ Pestaña Imágenes
 
     def browse_src_dir(self):
-        path = filedialog.askdirectory(title="Carpeta del juego")
+        path = filedialog.askdirectory(title="Game folder")
         if path:
             self._set_src(path)
 
     def browse_src_arc(self):
-        path = filedialog.askopenfilename(title="Abrir archivo .arc",
-                                          filetypes=[("Archivos ARC", "*.arc"), ("Todos", "*.*")])
+        path = filedialog.askopenfilename(title="Open .arc file",
+                                          filetypes=[("ARC files", "*.arc"), ("All", "*.*")])
         if path:
             self._set_src(path)
 
@@ -444,11 +444,11 @@ class App(ctk.CTk):
         except OSError as e:
             self.src_info.configure(text=str(e))
             return
-        names = ", ".join(p.name for p in arcs) or "ningún .arc"
-        self.src_info.configure(text=f"Se procesará: {names}")
+        names = ", ".join(p.name for p in arcs) or "no .arc files"
+        self.src_info.configure(text=f"Will process: {names}")
 
     def browse_img_out(self):
-        path = filedialog.askdirectory(title="Carpeta de destino")
+        path = filedialog.askdirectory(title="Output folder")
         if path:
             self.img_out_var.set(path)
 
@@ -456,24 +456,24 @@ class App(ctk.CTk):
         src = self.src_var.get().strip().strip('"')
         out_dir = self.img_out_var.get().strip()
         if not src or not Path(src).exists():
-            messagebox.showwarning(APP_TITLE, "Elige la carpeta del juego o un archivo .arc.")
+            messagebox.showwarning(APP_TITLE, "Choose the game folder or a .arc file.")
             return
         if not out_dir:
-            messagebox.showwarning(APP_TITLE, "Elige una carpeta de destino.")
+            messagebox.showwarning(APP_TITLE, "Choose an output folder.")
             return
         if not advhd_extract.find_arcs(src, self.audio_var.get()):
-            messagebox.showwarning(APP_TITLE, "No hay archivos .arc que procesar.")
+            messagebox.showwarning(APP_TITLE, "There are no .arc files to process.")
             return
 
         def done(r):
-            text = f"{r.images} imágenes y {r.others} otros archivos en:\n{out_dir}"
+            text = f"{r.images} images and {r.others} other files in:\n{out_dir}"
             if r.skipped:
-                text += f"\n({r.skipped} nombres ya estaban hechos)"
+                text += f"\n({r.skipped} names were already done)"
             if r.warnings:
-                text += f"\n\n{len(r.warnings)} avisos:\n" + "\n".join(r.warnings[:5])
+                text += f"\n\n{len(r.warnings)} warnings:\n" + "\n".join(r.warnings[:5])
             if r.errors:
-                text += f"\n\n{len(r.errors)} errores:\n" + "\n".join(r.errors[:10])
-            if messagebox.askyesno(APP_TITLE, text + "\n\n¿Abrir la carpeta?"):
+                text += f"\n\n{len(r.errors)} errors:\n" + "\n".join(r.errors[:10])
+            if messagebox.askyesno(APP_TITLE, text + "\n\nOpen the folder?"):
                 open_folder(out_dir)
 
         self.img_preview.configure(image=None, text="")
@@ -481,7 +481,7 @@ class App(ctk.CTk):
                       {"resume": self.resume_var.get(), "include_audio": self.audio_var.get(),
                        "compose": not self.no_alpha_var.get(),
                        "workers": int(self.workers_var.get())},
-                      "Extrayendo imágenes", done)
+                      "Extracting images", done)
 
     def _maybe_preview(self, name):
         """Muestra el último PNG escrito, como mucho cada PREVIEW_INTERVAL segundos."""
@@ -498,8 +498,8 @@ class App(ctk.CTk):
     # -------------------------------------------------- Pestaña Archivos ARC
 
     def browse_arc(self):
-        path = filedialog.askopenfilename(title="Abrir archivo .arc",
-                                          filetypes=[("Archivos ARC", "*.arc"), ("Todos", "*.*")])
+        path = filedialog.askopenfilename(title="Open .arc file",
+                                          filetypes=[("ARC files", "*.arc"), ("All", "*.*")])
         if path:
             self.load_arc(path)
 
@@ -510,7 +510,7 @@ class App(ctk.CTk):
         try:
             entries = read_index(path)
         except Exception as e:
-            messagebox.showerror(APP_TITLE, f"No se pudo leer el archivo:\n{e}")
+            messagebox.showerror(APP_TITLE, f"Could not read the file:\n{e}")
             return
         self.arc_var.set(path)
         self.entries = entries
@@ -519,7 +519,7 @@ class App(ctk.CTk):
 
         types = Counter(e.ext for e in entries)
         total = sum(e.size for e in entries)
-        self.arc_info.configure(text=f"{len(entries)} archivos   ·   {format_size(total)}   ·   "
+        self.arc_info.configure(text=f"{len(entries)} files   ·   {format_size(total)}   ·   "
                                      + ", ".join(f"{n} {ext}" for ext, n in types.items()))
         self.type_menu.configure(values=[ALL_TYPES] + sorted(types))
         self.type_var.set(ALL_TYPES)
@@ -541,10 +541,10 @@ class App(ctk.CTk):
             return
         shown = len(self.tree.get_children())
         selected = len(self.tree.selection())
-        self.sel_label.configure(text=f"{shown} mostrados · {selected} seleccionados")
+        self.sel_label.configure(text=f"{shown} shown · {selected} selected")
 
     def browse_raw_out(self):
-        path = filedialog.askdirectory(title="Carpeta de destino")
+        path = filedialog.askdirectory(title="Output folder")
         if path:
             self.raw_out_var.set(path)
 
@@ -552,69 +552,69 @@ class App(ctk.CTk):
         arc_path = self.arc_var.get().strip()
         out_dir = self.raw_out_var.get().strip()
         if not self.entries:
-            messagebox.showwarning(APP_TITLE, "Primero abre un archivo .arc.")
+            messagebox.showwarning(APP_TITLE, "Open a .arc file first.")
             return
         if not out_dir:
-            messagebox.showwarning(APP_TITLE, "Elige una carpeta de destino.")
+            messagebox.showwarning(APP_TITLE, "Choose an output folder.")
             return
         names = None
         if only_selected:
             names = [self.entries[int(iid)].filename for iid in self.tree.selection()]
             if not names:
-                messagebox.showwarning(APP_TITLE, "No hay archivos seleccionados.")
+                messagebox.showwarning(APP_TITLE, "No files selected.")
                 return
 
         def done(count):
-            if messagebox.askyesno(APP_TITLE, f"Se extrajeron {count} archivos en:\n{out_dir}\n\n"
-                                              "¿Abrir la carpeta?"):
+            if messagebox.askyesno(APP_TITLE, f"Extracted {count} files to:\n{out_dir}\n\n"
+                                              "Open the folder?"):
                 open_folder(out_dir)
 
         self.run_task(advhd_extract.extract_raw, (arc_path, out_dir), {"names": names},
-                      "Extrayendo", done)
+                      "Extracting", done)
 
     def start_pack(self):
-        folder = filedialog.askdirectory(title="Carpeta con los archivos NOMBRE.ext a empaquetar")
+        folder = filedialog.askdirectory(title="Folder with the NAME.ext files to pack")
         if not folder:
             return
-        out = filedialog.asksaveasfilename(title="Guardar .arc", defaultextension=".arc",
+        out = filedialog.asksaveasfilename(title="Save .arc", defaultextension=".arc",
                                            initialfile=f"{Path(folder).name}.arc",
-                                           filetypes=[("Archivos ARC", "*.arc"), ("Todos", "*.*")])
+                                           filetypes=[("ARC files", "*.arc"), ("All", "*.*")])
         if not out:
             return
 
         def done(count):
-            if messagebox.askyesno(APP_TITLE, f"Paquete creado ({count} archivos):\n{out}\n\n"
-                                              "¿Abrir la carpeta?"):
+            if messagebox.askyesno(APP_TITLE, f"Archive created ({count} files):\n{out}\n\n"
+                                              "Open the folder?"):
                 open_folder(Path(out).parent)
 
-        self.run_task(pack, (folder, out), {}, "Empaquetando", done)
+        self.run_task(pack, (folder, out), {}, "Packing", done)
 
     # ------------------------------------------------- Pestaña Reempaquetar
 
     def start_repack(self):
         arc, folder, out = (v.get().strip() for v in (self.rp_arc_var, self.rp_dir_var, self.rp_out_var))
         if not arc or not Path(arc).is_file():
-            messagebox.showwarning(APP_TITLE, "Elige el .arc original.")
+            messagebox.showwarning(APP_TITLE, "Choose the original .arc.")
             return
         if not folder or not Path(folder).is_dir():
-            messagebox.showwarning(APP_TITLE, "Elige la carpeta con las imágenes extraídas.")
+            messagebox.showwarning(APP_TITLE, "Choose the folder with the extracted images.")
             return
         if not out or not self._confirm_overwrite(out, arc):
             return
 
         def done(r):
             if r.errors:
-                messagebox.showerror(APP_TITLE, "No se creó el archivo. Errores:\n\n" +
+                messagebox.showerror(APP_TITLE, "The file was not created. Errors:\n\n" +
                                      "\n".join(r.errors[:15]))
                 return
             changed = "\n".join(r.changed[:15]) + ("\n…" if len(r.changed) > 15 else "")
-            if messagebox.askyesno(APP_TITLE, f"{len(r.changed)} de {r.entries} archivos reemplazados"
+            if messagebox.askyesno(APP_TITLE, f"{len(r.changed)} of {r.entries} files replaced"
                                               f"{':' if r.changed else '.'}\n{changed}\n\n{out}\n\n"
-                                              "¿Abrir la carpeta?"):
+                                              "Open the folder?"):
                 open_folder(Path(out).parent)
 
         self.run_task(advhd_extract.pack_images, (arc, folder, out),
-                      {"allow_resize": self.resize_var.get()}, "Reempaquetando", done)
+                      {"allow_resize": self.resize_var.get()}, "Repacking", done)
 
     # ---------------------------------------------------- Pestaña Guiones
 
@@ -631,10 +631,10 @@ class App(ctk.CTk):
     def start_wsc_strings(self):
         rio, folder = self.rio_var.get().strip(), self.txt_dir_var.get().strip()
         if not rio or not Path(rio).is_file():
-            messagebox.showwarning(APP_TITLE, "Elige Rio.arc.")
+            messagebox.showwarning(APP_TITLE, "Choose Rio.arc.")
             return
         if not folder:
-            messagebox.showwarning(APP_TITLE, "Elige la carpeta de textos.")
+            messagebox.showwarning(APP_TITLE, "Choose the text folder.")
             return
         try:
             charmap = self._load_charmap()
@@ -644,22 +644,22 @@ class App(ctk.CTk):
 
         def done(result):
             files, strings = result
-            self._show_report(f"{strings} textos de {files} guiones en {folder}\n"
-                              "Un archivo por guion: ID|DIRECCIÓN|TEXTO. Traduce solo el texto.")
-            if messagebox.askyesno(APP_TITLE, f"{strings} textos de {files} guiones.\n\n¿Abrir la carpeta?"):
+            self._show_report(f"{strings} lines from {files} scripts in {folder}\n"
+                              "One file per script: ID|ADDRESS|TEXT. Translate only the text.")
+            if messagebox.askyesno(APP_TITLE, f"{strings} lines from {files} scripts.\n\nOpen the folder?"):
                 open_folder(folder)
 
         self.run_task(advhd_wsc.extract_strings, (rio, folder),
                       {"charmap": charmap, "with_listing": self.listing_var.get()},
-                      "Extrayendo textos", done)
+                      "Extracting text", done)
 
     def start_wsc_rebuild(self):
         rio, folder, out = (v.get().strip() for v in (self.rio_var, self.txt_dir_var, self.rio_out_var))
         if not rio or not Path(rio).is_file():
-            messagebox.showwarning(APP_TITLE, "Elige Rio.arc.")
+            messagebox.showwarning(APP_TITLE, "Choose Rio.arc.")
             return
         if not folder or not Path(folder).is_dir():
-            messagebox.showwarning(APP_TITLE, "Elige la carpeta de textos.")
+            messagebox.showwarning(APP_TITLE, "Choose the text folder.")
             return
         if not out or not self._confirm_overwrite(out, rio):
             return
@@ -670,8 +670,8 @@ class App(ctk.CTk):
             return
 
         def done(rep):
-            lines = [rep.summary(), f"Salida: {out}", ""]
-            lines += [f"[AVISO] {w}" for w in rep.warnings]
+            lines = [rep.summary(), f"Output: {out}", ""]
+            lines += [f"[WARNING] {w}" for w in rep.warnings]
             for e in rep.entries:
                 if advhd_wsc.ST_CUT in e.flags or advhd_wsc.ST_UNSUPPORTED in e.flags \
                         or advhd_wsc.ST_REPLACED in e.flags:
@@ -680,24 +680,24 @@ class App(ctk.CTk):
 
         self.run_task(advhd_wsc.rebuild, (rio, folder, out),
                       {"charmap": charmap, "mode": "fixed" if self.fixed_var.get() else "reloc"},
-                      "Reconstruyendo guiones", done)
+                      "Rebuilding scripts", done)
 
     # ------------------------------------------------------ Pestaña Audio
 
     def start_audio(self):
         src, out = self.au_src_var.get().strip(), self.au_out_var.get().strip()
         if not src or not Path(src).exists():
-            messagebox.showwarning(APP_TITLE, "Elige la carpeta del juego.")
+            messagebox.showwarning(APP_TITLE, "Choose the game folder.")
             return
         if not out:
-            messagebox.showwarning(APP_TITLE, "Elige una carpeta de destino.")
+            messagebox.showwarning(APP_TITLE, "Choose an output folder.")
             return
 
         def done(count):
-            if messagebox.askyesno(APP_TITLE, f"{count} archivos de audio en:\n{out}\n\n¿Abrir la carpeta?"):
+            if messagebox.askyesno(APP_TITLE, f"{count} audio files in:\n{out}\n\nOpen the folder?"):
                 open_folder(out)
 
-        self.run_task(advhd_extract.extract_audio, (src, out), {}, "Extrayendo audio", done)
+        self.run_task(advhd_extract.extract_audio, (src, out), {}, "Extracting audio", done)
 
     # ------------------------------------------------------------ Tareas
 
@@ -739,11 +739,11 @@ class App(ctk.CTk):
                                                    f"{Path(name).name}")
                         self._maybe_preview(name)
                 elif kind == "done":
-                    self._finish("Completado")
+                    self._finish("Done")
                     self.progress.set(1)
                     self._task_done(data)
                 elif kind == "cancelled":
-                    self._finish("Cancelado")
+                    self._finish("Cancelled")
                 elif kind == "error":
                     self._finish("Error")
                     messagebox.showerror(APP_TITLE, str(data))
@@ -757,7 +757,7 @@ class App(ctk.CTk):
 
     def cancel_task(self):
         self.cancel_event.set()
-        self.status.configure(text="Cancelando… (se terminan las imágenes en curso)")
+        self.status.configure(text="Cancelling… (finishing the images in progress)")
 
     def _set_busy(self, busy):
         state = "disabled" if busy else "normal"

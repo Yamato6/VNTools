@@ -38,7 +38,7 @@ def _read_packet(f: BinaryIO, offset: int, magic: bytes) -> UTFTable:
     f.seek(offset)
     head = f.read(16)
     if head[:4] != magic:
-        raise ValueError(f"Se esperaba {magic!r} en {offset:#x}, hay {head[:4]!r}")
+        raise ValueError(f"Expected {magic!r} at {offset:#x}, found {head[:4]!r}")
     (size,) = struct.unpack_from('<Q', head, 8)
     return UTFTable(f.read(size))
 
@@ -101,7 +101,7 @@ class CPK:
         self.f.seek(e.offset)
         data = self.f.read(e.size)
         if len(data) != e.size:
-            raise ValueError(f"Datos truncados: {e.path}")
+            raise ValueError(f"Truncated data: {e.path}")
         if is_crilayla(data):
             data = decompress_crilayla(data)
         return data
@@ -129,7 +129,7 @@ def write_cpk(cpk: CPK, out_path, replace: Dict[int, bytes], progress=None, canc
     Sin cambios, el resultado es idéntico al original. Devuelve los archivos reemplazados.
     """
     if cpk.header.get('TocOffset') not in (None, 0, NONE_OFFSET) or not cpk.header.get('ItocOffset'):
-        raise ValueError("Solo se pueden reempaquetar .cpk con ITOC (sin TOC)")
+        raise ValueError("Only .cpk files with an ITOC (and no TOC) can be repacked")
     align = cpk.align
     itoc_off = cpk.header['ItocOffset']
     itoc = _read_packet(cpk.f, itoc_off, b'ITOC')
@@ -167,7 +167,7 @@ def write_cpk(cpk: CPK, out_path, replace: Dict[int, bytes], progress=None, canc
     cpk.f.seek(0)
     head_area = bytearray(cpk.f.read(itoc_off))
     if len(header_packet) > len(head_area):
-        raise ValueError("La cabecera del .cpk no cabe antes del ITOC")
+        raise ValueError("The .cpk header does not fit before the ITOC")
     head_area[:len(header_packet)] = header_packet
 
     total = len(sizes)
@@ -190,7 +190,7 @@ def write_cpk(cpk: CPK, out_path, replace: Dict[int, bytes], progress=None, canc
                 while left:
                     chunk = cpk.f.read(min(COPY_CHUNK, left))
                     if not chunk:
-                        raise ValueError(f"Datos truncados: {e.path}")
+                        raise ValueError(f"Truncated data: {e.path}")
                     out.write(chunk)
                     left -= len(chunk)
             pos += size

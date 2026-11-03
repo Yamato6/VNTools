@@ -58,7 +58,7 @@ OP_CHOICES = (0x31, 0x32)
 OP_VOICE = 0x44
 OP_NAME = 0x47
 OP_RETURN = 0x05
-TEXT_KINDS = {'m': 'mensaje', 'n': 'nombre', 'o': 'opción'}
+TEXT_KINDS = {'m': 'message', 'n': 'name', 'o': 'choice'}
 
 
 @dataclass
@@ -131,9 +131,9 @@ def _parse_instr(d: bytes, p: int) -> Instr:
             q = _jump(d, q + 6, fields)
             q = _string(d, q, 'o', fields)
     else:
-        raise ValueError(f"Opcode desconocido 0x{op:02X} en 0x{p:X}")
+        raise ValueError(f"Unknown opcode 0x{op:02X} at 0x{p:X}")
     if q > len(d):
-        raise ValueError(f"La instrucción 0x{op:02X} en 0x{p:X} se sale del guion")
+        raise ValueError(f"Instruction 0x{op:02X} at 0x{p:X} runs past the end of the script")
     return Instr(p, op, q, fields)
 
 
@@ -146,10 +146,10 @@ def parse(data: bytes, trailer: Optional[bytes] = None) -> Script:
     se toma de la cola del guion (tabla de colas de sn.bin); sin ella, el último posible.
     """
     if len(data) < 4 + TRAILER or len(data) % ALIGN:
-        raise ValueError("No es un guion")
+        raise ValueError("Not a script")
     start = _u32(data, 0)
     if not 4 <= start < len(data):
-        raise ValueError("No es un guion")
+        raise ValueError("Not a script")
     ends = {e for e in range(max(start, len(data) - TRAILER - ALIGN + 1), len(data) - TRAILER + 1)
             if not any(data[e + TRAILER:])
             and (trailer is None or data[e:e + TRAILER] == trailer)}
@@ -164,13 +164,13 @@ def parse(data: bytes, trailer: Optional[bytes] = None) -> Script:
         except (ValueError, struct.error, IndexError) as e:
             if found:
                 break
-            raise ValueError(f"No es un guion válido: {e}") from e
+            raise ValueError(f"Not a valid script: {e}") from e
         instrs.append(ins)
         p = ins.end
     if p in ends and instrs and instrs[-1].op == OP_RETURN:
         found = (p, len(instrs))
     if found is None:
-        raise ValueError("No se encontró el final del código")
+        raise ValueError("The end of the code was not found")
     return Script(data, start, found[0], instrs[:found[1]])
 
 
@@ -243,16 +243,16 @@ class CharMap:
             if not line.strip() or line.lstrip().startswith('#'):
                 continue
             if '=' not in line[1:]:
-                raise ValueError(f"Tabla de caracteres, línea {num}: se esperaba 'original=reemplazo'")
+                raise ValueError(f"Character table, line {num}: expected 'original=replacement'")
             # El primer carácter puede ser '=' (p. ej. '==X')
             idx = line.index('=', 1)
             src, dst = line[:idx], line[idx + 1:]
             if not src or not dst:
-                raise ValueError(f"Tabla de caracteres, línea {num}: par vacío")
+                raise ValueError(f"Character table, line {num}: empty pair")
             try:
                 dst.encode('cp932', errors='strict')
             except UnicodeEncodeError:
-                raise ValueError(f"Tabla de caracteres, línea {num}: '{dst}' no existe en Shift-JIS")
+                raise ValueError(f"Character table, line {num}: '{dst}' does not exist in Shift-JIS")
             pairs[src] = dst
         return cls(pairs)
 
@@ -323,13 +323,13 @@ def read_strings_file(path) -> Tuple[Dict[int, Tuple[int, str]], List[str]]:
             continue
         parts = line.split('|', 2)
         if len(parts) < 3:
-            warnings.append(f"Línea {line_num} no válida: {line[:50]}")
+            warnings.append(f"Invalid line {line_num}: {line[:50]}")
             continue
         try:
             sid = int(parts[0])
             addr = int(parts[1], 16) if parts[1].lower().startswith('0x') else int(parts[1])
         except ValueError as e:
-            warnings.append(f"Error en la línea {line_num}: {e}")
+            warnings.append(f"Error on line {line_num}: {e}")
             continue
         result[addr] = (sid, unescape_text(parts[2]))
     return result, warnings
@@ -340,7 +340,7 @@ def decompile_text(script: Script) -> str:
     labels = {f.value: f"label_{f.value:05X}" for ins in script.instrs for f in ins.fields
               if f.kind == 'J' and f.value}
     d = script.data
-    lines = [f"# inicio del código: 0x{script.code_start:X}"]
+    lines = [f"# code start: 0x{script.code_start:X}"]
     for ins in script.instrs:
         if ins.addr in labels:
             lines.append(f"{labels[ins.addr]}:")
@@ -357,7 +357,7 @@ def decompile_text(script: Script) -> str:
         if p < ins.end:
             parts.append(d[p:ins.end].hex(' '))
         lines.append(f"  {ins.addr:05X}  op_{ins.op:02X} {' | '.join(parts)}")
-    lines.append(f"# cola: {d[script.code_end:script.code_end + TRAILER].hex(' ')}")
+    lines.append(f"# tail: {d[script.code_end:script.code_end + TRAILER].hex(' ')}")
     return '\n'.join(lines) + '\n'
 
 
@@ -365,12 +365,12 @@ def decompile_text(script: Script) -> str:
 # Reconstrucción
 # =============================================================================
 
-ST_GREW = 'creció'
-ST_SHRANK = 'se acortó'
-ST_CUT = 'cortado'
-ST_PADDED = 'rellenado'
-ST_UNSUPPORTED = 'caracteres no soportados'
-ST_REPLACED = 'caracteres reemplazados'
+ST_GREW = 'grew'
+ST_SHRANK = 'shrank'
+ST_CUT = 'cut'
+ST_PADDED = 'padded'
+ST_UNSUPPORTED = 'unsupported characters'
+ST_REPLACED = 'replaced characters'
 
 
 @dataclass
@@ -398,14 +398,14 @@ class RebuildReport:
         return sum(1 for e in self.entries if flag in e.flags)
 
     def summary(self) -> str:
-        parts = [f"{self.changed} textos modificados de {self.total_strings} "
-                 f"en {self.scripts} guiones"]
+        parts = [f"{self.changed} of {self.total_strings} lines changed "
+                 f"in {self.scripts} scripts"]
         for flag in (ST_GREW, ST_SHRANK, ST_CUT, ST_PADDED, ST_REPLACED, ST_UNSUPPORTED):
             n = self.count(flag)
             if n:
                 parts.append(f"{n} {flag}")
         if self.mode == 'reloc':
-            parts.append(f"{self.relocated_refs} saltos reubicados")
+            parts.append(f"{self.relocated_refs} jumps relocated")
         return ', '.join(parts)
 
 
@@ -443,24 +443,24 @@ def _encode_replacement(script, sid, addr, old_raw: bytes, text: str, charmap,
         text, used = charmap.apply(text)
         if used:
             flags.append(ST_REPLACED)
-            details.append("reemplazados: " + ''.join(sorted(set(used))))
+            details.append("replaced: " + ''.join(sorted(set(used))))
     try:
         encoded = text.encode('cp932', errors='strict')
     except UnicodeEncodeError:
         bad = sorted({ch for ch in text if not _encodable(ch)})
         return original, StringResult(script, sid, addr, len(original), len(original), [ST_UNSUPPORTED],
-                                      "no existen en Shift-JIS: " + ''.join(bad) +
-                                      " (se conserva el original)")
+                                      "not in Shift-JIS: " + ''.join(bad) +
+                                      " (the original is kept)")
     if b'\0' in encoded:
         return original, StringResult(script, sid, addr, len(original), len(original), [ST_UNSUPPORTED],
-                                      "contiene un carácter nulo (se conserva el original)")
+                                      "contains a null character (the original is kept)")
 
     if pad_to is not None:
         limit = pad_to - 1
         if len(encoded) > limit:
             encoded = _truncate_cp932(text, limit)
             flags.append(ST_CUT)
-            details.append(f"máximo {limit} bytes, se perdió: «{text[len(encoded.decode('cp932')):]}»")
+            details.append(f"maximum {limit} bytes, lost: \"{text[len(encoded.decode('cp932')):]}\"")
         if len(encoded) < limit:
             encoded += b' ' * (limit - len(encoded))
             flags.append(ST_PADDED)
@@ -513,8 +513,8 @@ def rebuild_script(script: Script, replacements: Dict[int, Tuple[int, str]], rep
 
     for offset, f in patches:
         if f.value not in addr_map:
-            raise ValueError(f"{name}: un salto apunta a 0x{f.value:X}, que no es el inicio de una "
-                             "instrucción. Usa el modo de tamaño fijo.")
+            raise ValueError(f"{name}: a jump points to 0x{f.value:X}, which is not the start of an "
+                             "instruction. Use fixed-size mode.")
         new = addr_map[f.value]
         if new != f.value:
             rep.relocated_refs += 1
@@ -523,7 +523,7 @@ def rebuild_script(script: Script, replacements: Dict[int, Tuple[int, str]], rep
     out += d[script.code_end:script.code_end + TRAILER]
     out += bytes(-len(out) % ALIGN)
     if fixed and len(out) != len(d):
-        raise RuntimeError(f"{name}: error interno, el modo de tamaño fijo cambió el tamaño del guion")
+        raise RuntimeError(f"{name}: internal error, fixed-size mode changed the script size")
     return bytes(out)
 
 
@@ -539,7 +539,7 @@ def extract_strings(sn_path, out_dir, charmap: Optional[CharMap] = None, reverse
                     with_listing: bool = False, progress=None, cancel=None) -> Tuple[int, int]:
     """
     Guarda los textos de cada guion en <out_dir>/<NNN>.txt (solo los que tienen texto)
-    y, con with_listing, el listado completo en <out_dir>/listado/<NNN>.txt.
+    y, con with_listing, el listado completo en <out_dir>/listing/<NNN>.txt.
     Devuelve (guiones con texto, textos).
     """
     out_dir = Path(out_dir)
@@ -560,7 +560,7 @@ def extract_strings(sn_path, out_dir, charmap: Optional[CharMap] = None, reverse
             n_files += 1
             n_strings += len(strings)
         if with_listing:
-            with atomic_write(out_dir / 'listado' / f"{script_name(i)}.txt") as f:
+            with atomic_write(out_dir / 'listing' / f"{script_name(i)}.txt") as f:
                 f.write(decompile_text(script).encode('utf-8'))
     report(progress, len(scripts), len(scripts))
     return n_files, n_strings
@@ -573,7 +573,7 @@ def rebuild(sn_path, strings_dir, out_path, charmap: Optional[CharMap] = None,
     de textos se copian tal cual.
     """
     if mode not in ('reloc', 'fixed'):
-        raise ValueError(f"Modo no válido: {mode}")
+        raise ValueError(f"Invalid mode: {mode}")
     strings_dir = Path(strings_dir)
     rep = RebuildReport(mode=mode)
     scripts = read_sn(sn_path)
@@ -587,13 +587,13 @@ def rebuild(sn_path, strings_dir, out_path, charmap: Optional[CharMap] = None,
             replacements, warnings = read_strings_file(path)
             rep.warnings += [f"{script_name(i)}: {w}" for w in warnings]
             if i in FIXED_ONLY and mode == 'reloc':
-                rep.warnings.append(f"{script_name(i)}: guion del menú de depuración, se reconstruye "
-                                    "con tamaño fijo")
+                rep.warnings.append(f"{script_name(i)}: debug menu script, rebuilt "
+                                    "with fixed size")
             data = rebuild_script(parse(data, tails[i]), replacements, rep, script_name(i), charmap,
                                   fixed=i in FIXED_ONLY)
             rep.scripts += 1
         new.append(data)
-    report(progress, len(scripts), len(scripts) + 1, "Comprimiendo sn.bin…")
+    report(progress, len(scripts), len(scripts) + 1, "Compressing sn.bin…")
     write_sn(new, out_path, cancel)
     report(progress, len(scripts) + 1, len(scripts) + 1)
     return rep

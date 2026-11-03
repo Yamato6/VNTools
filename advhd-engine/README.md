@@ -42,11 +42,11 @@ pip install -r requirements.txt
 python advhd_gui.py
 ```
 
-- **Imágenes**: pick the game folder (or a single `.arc`) and an output folder, then extract every image, with a live preview over a checkerboard to show transparency.
-- **Reempaquetar**: pick the original `.arc`, the folder with the extracted (and edited) images and the output `.arc`.
-- **Guiones**: extract the text of `Rio.arc` (one file per script) and rebuild it with your translation, with a report of the lines that grew, were cut or could not be encoded.
+- **Images**: pick the game folder (or a single `.arc`) and an output folder, then extract every image, with a live preview over a checkerboard to show transparency.
+- **Repack**: pick the original `.arc`, the folder with the extracted (and edited) images and the output `.arc`.
+- **Scripts**: extract the text of `Rio.arc` (one file per script) and rebuild it with your translation, with a report of the lines that grew, were cut or could not be encoded.
 - **Audio**: extract `Bgm.arc`, `Se.arc` and `Voice.arc` as `.ogg`.
-- **Archivos ARC**: open a `.arc`, filter its files by name or type and extract all of them or only the selected ones. "Empaquetar carpeta…" packs a folder back into a `.arc`.
+- **ARC Files**: open a `.arc`, filter its files by name or type and extract all of them or only the selected ones. "Pack folder…" packs a folder back into a `.arc`.
 
 The default output folder is next to the game folder, never inside it: the tools only read the game files.
 
@@ -159,12 +159,12 @@ python advhd_tool.py wsc-rebuild <Rio.arc> <text_folder> <new_Rio.arc> [--charma
 0000|0x00000005|CROSS†CHANNEL
 0001|0x000000B4|最古の記憶は。%K%P
 …
-# nombre
+# name
 0013|0x00000356|少女
 0014|0x0000035B|「……太一」%K%P
 ```
 
-Translate only the text after the second `|`. Keep the control codes: `%K%P` waits for a click and ends the message, and `{漢字:よみ}` is ruby (reading) text. `--listing` also writes the full disassembly of every script to `listado\`.
+Translate only the text after the second `|`. Keep the control codes: `%K%P` waits for a click and ends the message, and `{漢字:よみ}` is ruby (reading) text. `--listing` also writes the full disassembly of every script to `listing\`.
 
 `wsc-rebuild` takes the original `Rio.arc` and the folder with the translated files (scripts without a file are copied unchanged):
 

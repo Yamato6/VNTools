@@ -97,7 +97,7 @@ def _untile(units: np.ndarray, w: int, h: int, pitch: int) -> np.ndarray:
 def xtx_info(b: bytes) -> Tuple[int, int, int]:
     """(formato, ancho, alto) de una textura XTX."""
     if not is_xtx(b):
-        raise ValueError("No es una textura XTX")
+        raise ValueError("Not an XTX texture")
     _aw, _ah, w, h = struct.unpack_from('>IIII', b, 8)
     return b[4], w, h
 
@@ -110,7 +110,7 @@ def xtx_to_image(b: bytes) -> Image.Image:
 def _decode_full(b: bytes):
     """Textura completa (tamaño alineado) y su tamaño real."""
     if not is_xtx(b):
-        raise ValueError("No es una textura XTX")
+        raise ValueError("Not an XTX texture")
     fmt = b[4]
     aw, ah, w, h = struct.unpack_from('>IIII', b, 8)
     body = b[XTX_HEADER:]
@@ -132,7 +132,7 @@ def _decode_full(b: bytes):
                           ((v >> 12) & 15) * 17])
         img = Image.fromarray(rgba.astype(np.uint8), 'RGBA')
     else:
-        raise ValueError(f"Formato XTX no soportado: {fmt}")
+        raise ValueError(f"Unsupported XTX format: {fmt}")
     return img, w, h
 
 
@@ -161,7 +161,7 @@ def image_to_xtx(img: Image.Image, original: bytes) -> bytes:
     """
     full, w, h = _decode_full(original)
     if img.size != (w, h):
-        raise ValueError(f"mide {img.size[0]}x{img.size[1]} y la textura original {w}x{h}")
+        raise ValueError(f"it is {img.size[0]}x{img.size[1]} and the original texture is {w}x{h}")
     fmt = original[4]
     aw, ah = full.size
     full = full.convert('RGBA')
@@ -188,7 +188,7 @@ def image_to_xtx(img: Image.Image, original: bytes) -> bytes:
         tiled = _tile(blocks, bw, bh, 16)
         body = tiled.reshape(-1, 2)[:, ::-1].tobytes()          # intercambio de 16 bits
     else:
-        raise ValueError(f"Formato XTX no soportado: {fmt}")
+        raise ValueError(f"Unsupported XTX format: {fmt}")
     rest = original[XTX_HEADER + len(body):]                    # datos tras la imagen, si los hay
     return original[:XTX_HEADER] + body + rest
 

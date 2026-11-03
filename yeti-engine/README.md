@@ -48,11 +48,11 @@ On Linux, build `_crilayla.so` instead (`gcc -O2 -shared -fPIC -o _crilayla.so _
 python yeti_gui.py
 ```
 
-- **Imágenes**: pick the game's `data` folder (or a single `.cpk`) and an output folder, then extract every image, with a live preview.
-- **Reempaquetar**: pick the original `.cpk`, the folder with the extracted (and edited) images and the output `.cpk`.
-- **Guiones**: extract the text of `sn.bin` (one file per script) and rebuild it with your translation, with a report of the lines that grew, were cut or could not be encoded.
+- **Images**: pick the game's `data` folder (or a single `.cpk`) and an output folder, then extract every image, with a live preview.
+- **Repack**: pick the original `.cpk`, the folder with the extracted (and edited) images and the output `.cpk`.
+- **Scripts**: extract the text of `sn.bin` (one file per script) and rebuild it with your translation, with a report of the lines that grew, were cut or could not be encoded.
 - **Audio**: extract `bgm.cpk`, `se.cpk` and `vo.cpk` as `.hca` (and `.wav` with vgmstream).
-- **Archivos CPK**: open a `.cpk`, browse its files and extract all of them or only the selected ones. "Reempaquetar carpeta…" puts edited `<id>.bin` / `<id>.hca` files back into it.
+- **CPK Files**: open a `.cpk`, browse its files and extract all of them or only the selected ones. "Repack folder…" puts edited `<id>.bin` / `<id>.hca` files back into it.
 - **XTX**: convert a loose `.xtx` texture to PNG, with preview.
 
 The default output folder is next to `data`, never inside it: the tools only read the game files.
@@ -149,12 +149,12 @@ python yeti_tool.py script-rebuild <sn.bin> <text_folder> <new_sn.bin> [--charma
 `script-strings` writes one file per script (`005.txt`…) with the messages, character names and choices:
 
 ```
-# nombre
+# name
 0000|0x00000153|霧
 0001|0x00000161|「いきなり窓の外にいるなんて、もう二度としないでください」
 ```
 
-Translate only the text after the second `|`. `--listing` also writes the full disassembly of every script to `listado\`.
+Translate only the text after the second `|`. `--listing` also writes the full disassembly of every script to `listing\`.
 
 `script-rebuild` takes the original `sn.bin` and the folder with the translated files (scripts without a file are copied unchanged):
 

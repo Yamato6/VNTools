@@ -91,18 +91,18 @@ def hcb_extract_strings(hcb_path: str, output_path: str, charmap=None, reverse=F
 
 def hcb_rebuild(original_hcb: str, strings_path: str, output_hcb: str, charmap=None, mode='reloc'):
     rep = fvp_hcb.rebuild(original_hcb, strings_path, output_hcb, charmap, mode)
-    print(f"HCB rebuild: {original_hcb} ({'reubicando' if mode == 'reloc' else 'tamaño fijo'})")
+    print(f"HCB rebuild: {original_hcb} ({'relocating' if mode == 'reloc' else 'fixed size'})")
     for w in rep.warnings[:10]:
         print(f"  [WARN] {w}")
     if len(rep.warnings) > 10:
-        print(f"  ... y {len(rep.warnings) - 10} avisos más")
+        print(f"  ... and {len(rep.warnings) - 10} more warnings")
 
     notable = [e for e in rep.entries
                if fvp_hcb.ST_CUT in e.flags or fvp_hcb.ST_UNSUPPORTED in e.flags]
     for e in notable[:20]:
         print(f"  [{', '.join(e.flags)}] {e.sid:04d} 0x{e.addr:08X}: {e.detail}")
     if len(notable) > 20:
-        print(f"  ... y {len(notable) - 20} textos más con problemas")
+        print(f"  ... and {len(notable) - 20} more strings with problems")
 
     print(f"  {rep.summary()}")
     print(f"  Original size: {rep.original_size} bytes")
@@ -151,7 +151,7 @@ def print_usage():
 FVP Tools - Tools for Favorite View Point System
 
 Usage:
-  (sin argumentos abre la interfaz gráfica)
+  (with no arguments, opens the graphical interface)
 
   BIN Archive:
     python fvp_tools.py bin-list <file.bin>
@@ -214,8 +214,8 @@ def main():
         try:
             import fvp_gui
         except ImportError as e:
-            print(f"No se pudo abrir la interfaz gráfica: {e}")
-            print("Instala las dependencias con: pip install -r requirements.txt")
+            print(f"Could not open the graphical interface: {e}")
+            print("Install the dependencies with: pip install -r requirements.txt")
             print_usage()
             return
         fvp_gui.main()
@@ -271,7 +271,7 @@ def main():
             print_usage()
 
     except KeyboardInterrupt:
-        print("Cancelado")
+        print("Cancelled")
         sys.exit(1)
     except Exception as e:
         print(f"Error: {e}")

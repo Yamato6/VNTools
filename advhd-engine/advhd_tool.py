@@ -25,7 +25,7 @@ def print_progress(i, total, name):
 def cmd_list(arc_path: str):
     entries = read_index(arc_path)
     types = Counter(e.ext for e in entries)
-    print(f"{arc_path}: {len(entries)} archivos  ("
+    print(f"{arc_path}: {len(entries)} files  ("
           + ", ".join(f"{n} {ext}" for ext, n in types.items()) + ")")
     for e in entries:
         print(f" {e.filename:<18} {e.size:>12}")
@@ -33,9 +33,9 @@ def cmd_list(arc_path: str):
 
 
 def cmd_extract(arc_path: str, out_dir: str):
-    print(f"Extrayendo desde {arc_path}...")
+    print(f"Extracting from {arc_path}...")
     count = advhd_extract.extract_raw(arc_path, out_dir, progress=print_progress)
-    print(f"Extracción completada: {count} archivos en {out_dir}")
+    print(f"Extraction complete: {count} files in {out_dir}")
 
 
 def cmd_images(src: str, out_dir: str, resume: bool, audio: bool, compose: bool, workers,
@@ -44,22 +44,22 @@ def cmd_images(src: str, out_dir: str, resume: bool, audio: bool, compose: bool,
     r = advhd_extract.extract_images(src, out_dir, resume, audio, compose, workers, png_level,
                                      progress=print_progress)
     for w in r.warnings:
-        print(f" Aviso: {w}")
+        print(f" Warning: {w}")
     for err in r.errors:
         print(f" ! {err}")
-    print(f"Hecho en {time.time() - t:.0f} s: {r.images} imágenes, {r.others} otros archivos, "
-          f"{len(r.errors)} errores" + (f" ({r.skipped} ya hechos)" if r.skipped else ""))
+    print(f"Done in {time.time() - t:.0f} s: {r.images} images, {r.others} other files, "
+          f"{len(r.errors)} errors" + (f" ({r.skipped} already done)" if r.skipped else ""))
 
 
 def cmd_pack(folder: str, arc_path: str):
-    print(f"Empaquetando {folder} en {arc_path}...")
+    print(f"Packing {folder} into {arc_path}...")
     count = pack(folder, arc_path, progress=print_progress)
-    print(f"Paquete creado: {arc_path} ({count} archivos)")
+    print(f"Archive created: {arc_path} ({count} files)")
 
 
 def cmd_audio(src: str, out_dir: str):
     count = advhd_extract.extract_audio(src, out_dir, progress=print_progress)
-    print(f"Audio extraído: {count} archivos en {out_dir}")
+    print(f"Audio extracted: {count} files in {out_dir}")
 
 
 def cmd_images_pack(arc_path: str, folder: str, out_arc: str, allow_resize: bool):
@@ -67,74 +67,74 @@ def cmd_images_pack(arc_path: str, folder: str, out_arc: str, allow_resize: bool
     for err in r.errors:
         print(f" ! {err}")
     if r.errors:
-        print("No se creó el archivo: corrige los errores y vuelve a intentarlo")
+        print("The file was not created: fix the errors and try again")
         sys.exit(1)
     for name in r.changed:
-        print(f"  reemplazado: {name}")
-    print(f"Paquete creado: {out_arc} ({len(r.changed)} de {r.entries} archivos reemplazados)")
+        print(f"  replaced: {name}")
+    print(f"Archive created: {out_arc} ({len(r.changed)} of {r.entries} files replaced)")
 
 
 def cmd_wsc_strings(arc_path: str, out_dir: str, charmap, reverse: bool, listing: bool):
     files, strings = advhd_wsc.extract_strings(arc_path, out_dir, charmap, reverse, listing)
-    print(f"{strings} textos de {files} guiones en {out_dir}")
+    print(f"{strings} lines from {files} scripts in {out_dir}")
 
 
 def cmd_wsc_rebuild(arc_path: str, strings_dir: str, out_arc: str, charmap, mode: str):
     rep = advhd_wsc.rebuild(arc_path, strings_dir, out_arc, charmap, mode)
-    print(f"Guiones: {arc_path} ({'reubicando' if mode == 'reloc' else 'tamaño fijo'})")
+    print(f"Scripts: {arc_path} ({'relocating' if mode == 'reloc' else 'fixed size'})")
     for w in rep.warnings[:10]:
-        print(f"  [AVISO] {w}")
+        print(f"  [WARNING] {w}")
     if len(rep.warnings) > 10:
-        print(f"  ... y {len(rep.warnings) - 10} avisos más")
+        print(f"  ... and {len(rep.warnings) - 10} more warnings")
     notable = [e for e in rep.entries
                if advhd_wsc.ST_CUT in e.flags or advhd_wsc.ST_UNSUPPORTED in e.flags]
     for e in notable[:20]:
         print(f"  [{', '.join(e.flags)}] {e.script} {e.sid:04d} 0x{e.addr:08X}: {e.detail}")
     if len(notable) > 20:
-        print(f"  ... y {len(notable) - 20} textos más con problemas")
+        print(f"  ... and {len(notable) - 20} more lines with problems")
     print(f"  {rep.summary()}")
-    print(f"  Salida: {out_arc}")
+    print(f"  Output: {out_arc}")
 
 
 def usage():
-    print("AdvHD Tools - Extractor .arc / WIPF (CROSS†CHANNEL, edición WillPlus)")
+    print("AdvHD Tools - .arc / WIPF tools (CROSS†CHANNEL, WillPlus edition)")
     print()
-    print("Uso:")
-    print("  python advhd_tool.py                          (abre la interfaz gráfica)")
-    print("  python advhd_tool.py list    <archivo.arc>")
-    print("  python advhd_tool.py extract <archivo.arc> <directorio_salida>")
-    print("  python advhd_tool.py images  <archivo.arc|carpeta_juego> <directorio_salida>")
+    print("Usage:")
+    print("  python advhd_tool.py                          (opens the graphical interface)")
+    print("  python advhd_tool.py list    <file.arc>")
+    print("  python advhd_tool.py extract <file.arc> <output_folder>")
+    print("  python advhd_tool.py images  <file.arc|game_folder> <output_folder>")
     print("                               [--resume] [--audio] [--no-alpha] [--workers N] [--png-level N]")
-    print("  python advhd_tool.py images-pack <original.arc> <carpeta_imagenes> <salida.arc> [--allow-resize]")
-    print("  python advhd_tool.py pack    <carpeta> <archivo.arc>")
-    print("  python advhd_tool.py audio   <carpeta_juego> <directorio_salida>")
+    print("  python advhd_tool.py images-pack <original.arc> <images_folder> <output.arc> [--allow-resize]")
+    print("  python advhd_tool.py pack    <folder> <file.arc>")
+    print("  python advhd_tool.py audio   <game_folder> <output_folder>")
     print()
-    print("Guiones (Rio.arc):")
-    print("  python advhd_tool.py wsc-strings <Rio.arc> <carpeta_textos> [--listing] [--charmap <map.txt> --reverse]")
-    print("  python advhd_tool.py wsc-rebuild <Rio.arc> <carpeta_textos> <Rio_nuevo.arc> [--charmap <map.txt>] [--fixed]")
+    print("Scripts (Rio.arc):")
+    print("  python advhd_tool.py wsc-strings <Rio.arc> <text_folder> [--listing] [--charmap <map.txt> --reverse]")
+    print("  python advhd_tool.py wsc-rebuild <Rio.arc> <text_folder> <new_Rio.arc> [--charmap <map.txt>] [--fixed]")
     print()
-    print("Opciones de 'images':")
-    print("  --resume       continúa donde se quedó la última ejecución (_progreso.txt)")
-    print("  --audio        incluye el audio (Bgm, Se y Voice.arc) como .ogg")
-    print("  --no-alpha     no aplica las máscaras: guarda la imagen y NOMBRE_msk.png por separado")
-    print(f"  --workers N    procesos en paralelo (por defecto {advhd_extract.default_workers()}, "
-          "la mitad de los núcleos)")
-    print(f"  --png-level N  compresión PNG 0-9 (por defecto {advhd_extract.DEFAULT_PNG_LEVEL}: "
-          "rápido, archivos algo más grandes)")
+    print("'images' options:")
+    print("  --resume       continue where the last run stopped (_progreso.txt)")
+    print("  --audio        include the audio (Bgm, Se and Voice.arc) as .ogg")
+    print("  --no-alpha     don't apply the masks: save the image and NAME_msk.png separately")
+    print(f"  --workers N    parallel processes (default {advhd_extract.default_workers()}, "
+          "half the cores)")
+    print(f"  --png-level N  PNG compression 0-9 (default {advhd_extract.DEFAULT_PNG_LEVEL}: "
+          "fast, somewhat larger files)")
     print()
-    print("Otras opciones:")
-    print("  --allow-resize  permite imágenes con otro tamaño que el original")
-    print("  --listing       guarda también el listado completo de cada guion (carpeta listado)")
-    print("  --charmap       tabla de caracteres para una fuente propia ('á=ｱ' por línea)")
-    print("  --reverse       aplica la tabla al revés al extraer (guiones ya traducidos)")
-    print("  --fixed         cada texto conserva su tamaño original (se rellena o se corta)")
+    print("Other options:")
+    print("  --allow-resize  allow images with a different size than the original")
+    print("  --listing       also save the full listing of each script (listing folder)")
+    print("  --charmap       character table for a custom font ('á=ｱ' per line)")
+    print("  --reverse       apply the table in reverse when extracting (already translated scripts)")
+    print("  --fixed         each text keeps its original size (padded or cut)")
     print()
-    print("Ejemplos:")
+    print("Examples:")
     print("  python advhd_tool.py list Chip_T.arc")
     print("  python advhd_tool.py images \"CROSS†CHANNEL\" png --resume")
-    print("  python advhd_tool.py images-pack Chip_T.arc png Chip_T_nuevo.arc")
-    print("  python advhd_tool.py wsc-strings Rio.arc textos")
-    print("  python advhd_tool.py wsc-rebuild Rio.arc textos Rio_nuevo.arc")
+    print("  python advhd_tool.py images-pack Chip_T.arc png Chip_T_new.arc")
+    print("  python advhd_tool.py wsc-strings Rio.arc text")
+    print("  python advhd_tool.py wsc-rebuild Rio.arc text Rio_new.arc")
 
 
 def get_option(args, name, default=None):
@@ -174,8 +174,8 @@ def main():
         try:
             import advhd_gui
         except ImportError as e:
-            print(f"No se pudo abrir la interfaz gráfica: {e}")
-            print("Instala las dependencias con: pip install -r requirements.txt")
+            print(f"Could not open the graphical interface: {e}")
+            print("Install the dependencies with: pip install -r requirements.txt")
             print()
             usage()
             return
@@ -210,7 +210,7 @@ def main():
         else:
             usage()
     except KeyboardInterrupt:
-        print("Cancelado")
+        print("Cancelled")
         sys.exit(1)
     except Exception as e:
         print(f"Error: {e}")

@@ -23,16 +23,16 @@ APP_TITLE = "FVP Tools"
 PREVIEW_SIZE = (300, 260)
 MAX_REPORT_ROWS = 5000
 
-MODE_RELOC = "Reubicar (sin límite)"
-MODE_FIXED = "Tamaño fijo"
+MODE_RELOC = "Relocate (no limit)"
+MODE_FIXED = "Fixed size"
 
 REPORT_FILTERS = {
-    "Con avisos": lambda e: fvp_hcb.ST_CUT in e.flags or fvp_hcb.ST_UNSUPPORTED in e.flags,
-    "Crecieron": lambda e: fvp_hcb.ST_GREW in e.flags,
-    "Cortados": lambda e: fvp_hcb.ST_CUT in e.flags,
-    "Caracteres reemplazados": lambda e: fvp_hcb.ST_REPLACED in e.flags,
-    "Caracteres no soportados": lambda e: fvp_hcb.ST_UNSUPPORTED in e.flags,
-    "Todos los modificados": lambda e: True,
+    "With warnings": lambda e: fvp_hcb.ST_CUT in e.flags or fvp_hcb.ST_UNSUPPORTED in e.flags,
+    "Grew": lambda e: fvp_hcb.ST_GREW in e.flags,
+    "Cut": lambda e: fvp_hcb.ST_CUT in e.flags,
+    "Replaced characters": lambda e: fvp_hcb.ST_REPLACED in e.flags,
+    "Unsupported characters": lambda e: fvp_hcb.ST_UNSUPPORTED in e.flags,
+    "All modified": lambda e: True,
 }
 
 
@@ -57,7 +57,7 @@ def muted(widget_cls, master, **kw):
 class PathRow:
     """Fila etiqueta + campo + botón de examinar."""
 
-    def __init__(self, master, row, label, browse, button="Elegir…", width=100):
+    def __init__(self, master, row, label, browse, button="Browse…", width=100):
         self.var = tk.StringVar()
         ctk.CTkLabel(master, text=label).grid(row=row, column=0, sticky="w", padx=(4, 8), pady=3)
         self.entry = ctk.CTkEntry(master, textvariable=self.var)
@@ -92,9 +92,9 @@ class App(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
         self.tabs = ctk.CTkTabview(self)
         self.tabs.grid(row=0, column=0, sticky="nsew", padx=12, pady=(6, 0))
-        self._build_bin_tab(self.tabs.add("Archivos BIN"))
-        self._build_nvsg_tab(self.tabs.add("Imágenes NVSG"))
-        self._build_hcb_tab(self.tabs.add("Scripts HCB"))
+        self._build_bin_tab(self.tabs.add("BIN Files"))
+        self._build_nvsg_tab(self.tabs.add("NVSG Images"))
+        self._build_hcb_tab(self.tabs.add("HCB Scripts"))
         self._build_status_bar()
         self._apply_tree_style()
         self.after(50, self._poll_events)
@@ -126,7 +126,7 @@ class App(ctk.CTk):
         frame.grid_propagate(False)
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_rowconfigure(0, weight=1)
-        img_label = ctk.CTkLabel(frame, text="Sin vista previa")
+        img_label = ctk.CTkLabel(frame, text="No preview")
         img_label.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 4))
         info = ctk.CTkLabel(frame, text="", justify="left", anchor="w")
         info.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
@@ -144,15 +144,15 @@ class App(ctk.CTk):
             ctk_img = ctk.CTkImage(light_image=thumb, dark_image=thumb, size=thumb.size)
             img_label.configure(image=ctk_img, text="")
         else:
-            img_label.configure(image=None, text="Sin vista previa")
+            img_label.configure(image=None, text="No preview")
         info.configure(text=text)
         self._preview_refs[key] = (img_label, info, ctk_img)
 
     @staticmethod
     def _nvsg_info(h: fvp_nvsg.NVSGHeader) -> str:
-        return (f"Formato {h.fmt}: {fvp_nvsg.FORMAT_NAMES.get(h.fmt, '?')}\n"
-                f"Tamaño: {h.width}×{h.height}   Frames: {h.frames}\n"
-                f"Posición: x={h.x}  y={h.y}")
+        return (f"Format {h.fmt}: {fvp_nvsg.FORMAT_NAMES.get(h.fmt, '?')}\n"
+                f"Size: {h.width}×{h.height}   Frames: {h.frames}\n"
+                f"Position: x={h.x}  y={h.y}")
 
     def _preview_bytes(self, key, data: bytes, name=""):
         try:
@@ -164,10 +164,10 @@ class App(ctk.CTk):
                 img = Image.open(BytesIO(data))
                 self._show_preview(key, img, f"{name}\n{img.width}×{img.height} {img.mode}")
             else:
-                kind = fvp_bin.detect_type(data) or "desconocido"
-                self._show_preview(key, None, f"Tipo: {kind}\n{format_size(len(data))}")
+                kind = fvp_bin.detect_type(data) or "unknown"
+                self._show_preview(key, None, f"Type: {kind}\n{format_size(len(data))}")
         except Exception as e:
-            self._show_preview(key, None, f"No se pudo mostrar:\n{e}")
+            self._show_preview(key, None, f"Could not show it:\n{e}")
 
     # ------------------------------------------------------------ Pestaña BIN
 
@@ -175,17 +175,17 @@ class App(ctk.CTk):
         tab.grid_columnconfigure(1, weight=1)
         tab.grid_rowconfigure(3, weight=1)
 
-        self.bin_path = PathRow(tab, 0, "Archivo .bin:", self.browse_bin, "Abrir…")
+        self.bin_path = PathRow(tab, 0, ".bin file:", self.browse_bin, "Open…")
         self.bin_path.entry.bind("<Return>", lambda _e: self.load_bin(self.bin_path.get()))
         self._busy(self.bin_path.button)
 
-        self.bin_info = muted(ctk.CTkLabel, tab, text="Ningún archivo abierto", anchor="w")
+        self.bin_info = muted(ctk.CTkLabel, tab, text="No file open", anchor="w")
         self.bin_info.grid(row=1, column=0, columnspan=3, sticky="ew", padx=4)
 
         self.bin_filter = tk.StringVar()
         self.bin_filter.trace_add("write", lambda *_: self._refresh_bin_tree())
-        ctk.CTkLabel(tab, text="Filtrar:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=3)
-        ctk.CTkEntry(tab, textvariable=self.bin_filter, placeholder_text="nombre contiene…") \
+        ctk.CTkLabel(tab, text="Filter:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=3)
+        ctk.CTkEntry(tab, textvariable=self.bin_filter, placeholder_text="name contains…") \
             .grid(row=2, column=1, columnspan=2, sticky="ew", padx=(0, 4), pady=3)
 
         body = ctk.CTkFrame(tab, fg_color="transparent")
@@ -193,41 +193,41 @@ class App(ctk.CTk):
         body.grid_columnconfigure(0, weight=1)
         body.grid_rowconfigure(0, weight=1)
         frame, self.bin_tree = self._make_tree(
-            body, ("name", "size", "type"), ("Nombre", "Tamaño", "Tipo"), (380, 100, 70),
+            body, ("name", "size", "type"), ("Name", "Size", "Type"), (380, 100, 70),
             {"size": "e"})
         frame.grid(row=0, column=0, sticky="nsew")
         self.bin_tree.bind("<<TreeviewSelect>>", lambda _e: self._on_bin_select())
         self._make_preview(body, "bin").grid(row=0, column=1, sticky="ns", padx=(8, 0))
 
-        self.bin_out = PathRow(tab, 4, "Destino:", self.browse_bin_out)
+        self.bin_out = PathRow(tab, 4, "Output:", self.browse_bin_out)
         self._busy(self.bin_out.button)
 
         actions = ctk.CTkFrame(tab, fg_color="transparent")
         actions.grid(row=5, column=0, columnspan=3, sticky="ew", padx=4, pady=(2, 0))
         self.bin_auto_ext = tk.BooleanVar(value=True)
-        self._busy(ctk.CTkCheckBox(actions, text="Añadir extensiones (.ogg/.wav)",
+        self._busy(ctk.CTkCheckBox(actions, text="Add extensions (.ogg/.wav)",
                                    variable=self.bin_auto_ext)).pack(side="left")
         self.bin_sel_label = muted(ctk.CTkLabel, actions, text="")
         self.bin_sel_label.pack(side="left", padx=12)
-        self._busy(ctk.CTkButton(actions, text="Extraer todo",
+        self._busy(ctk.CTkButton(actions, text="Extract all",
                                  command=lambda: self.start_bin_extract(False))).pack(side="right")
-        self._busy(ctk.CTkButton(actions, text="Extraer seleccionados",
+        self._busy(ctk.CTkButton(actions, text="Extract selected",
                                  command=lambda: self.start_bin_extract(True))).pack(side="right", padx=8)
 
         pack = ctk.CTkFrame(tab)
         pack.grid(row=6, column=0, columnspan=3, sticky="ew", padx=4, pady=(10, 0))
         pack.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(pack, text="Empaquetar", font=ctk.CTkFont(weight="bold")) \
+        ctk.CTkLabel(pack, text="Pack", font=ctk.CTkFont(weight="bold")) \
             .grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
-        self.bin_pack_in = PathRow(pack, 1, "Carpeta:", self.browse_bin_pack_in)
-        self.bin_pack_out = PathRow(pack, 2, "Archivo .bin:", self.browse_bin_pack_out, "Guardar como…")
+        self.bin_pack_in = PathRow(pack, 1, "Folder:", self.browse_bin_pack_in)
+        self.bin_pack_out = PathRow(pack, 2, ".bin file:", self.browse_bin_pack_out, "Save as…")
         self._busy(self.bin_pack_in.button, self.bin_pack_out.button)
-        self._busy(ctk.CTkButton(pack, text="Empaquetar", width=140, command=self.start_bin_pack)) \
+        self._busy(ctk.CTkButton(pack, text="Pack", width=140, command=self.start_bin_pack)) \
             .grid(row=3, column=2, sticky="e", padx=4, pady=(2, 8))
 
     def browse_bin(self):
-        path = filedialog.askopenfilename(title="Abrir archivo .bin",
-                                          filetypes=[("Archivos BIN", "*.bin"), ("Todos", "*.*")])
+        path = filedialog.askopenfilename(title="Open .bin file",
+                                          filetypes=[("BIN files", "*.bin"), ("All", "*.*")])
         if path:
             self.load_bin(path)
 
@@ -243,7 +243,7 @@ class App(ctk.CTk):
                     f.seek(e.offset)
                     kinds.append(fvp_bin.detect_type(f.read(16)))
         except Exception as e:
-            messagebox.showerror(APP_TITLE, f"No se pudo leer el archivo:\n{e}")
+            messagebox.showerror(APP_TITLE, f"Could not read the file:\n{e}")
             return
         self.bin_path.set(path)
         self.bin_entries = list(zip(entries, kinds))
@@ -254,10 +254,10 @@ class App(ctk.CTk):
 
         counts = {}
         for k in kinds:
-            counts[k or "otros"] = counts.get(k or "otros", 0) + 1
+            counts[k or "other"] = counts.get(k or "other", 0) + 1
         total = sum(e.size for e in entries)
         types = ", ".join(f"{n} {k}" for k, n in sorted(counts.items()))
-        self.bin_info.configure(text=f"{len(entries)} archivos  ·  {format_size(total)}  ·  {types}")
+        self.bin_info.configure(text=f"{len(entries)} files  ·  {format_size(total)}  ·  {types}")
         self._refresh_bin_tree()
         self._show_preview("bin")
 
@@ -275,7 +275,7 @@ class App(ctk.CTk):
             self.bin_sel_label.configure(text="")
             return
         self.bin_sel_label.configure(
-            text=f"{len(self.bin_tree.get_children())} mostrados · {len(self.bin_tree.selection())} seleccionados")
+            text=f"{len(self.bin_tree.get_children())} shown · {len(self.bin_tree.selection())} selected")
 
     def _on_bin_select(self):
         self._update_bin_sel()
@@ -291,35 +291,35 @@ class App(ctk.CTk):
         self._preview_bytes("bin", data, entry.name)
 
     def browse_bin_out(self):
-        path = filedialog.askdirectory(title="Carpeta de destino")
+        path = filedialog.askdirectory(title="Output folder")
         if path:
             self.bin_out.set(path)
 
     def start_bin_extract(self, only_selected):
         if not self.bin_entries:
-            messagebox.showwarning(APP_TITLE, "Primero abre un archivo .bin.")
+            messagebox.showwarning(APP_TITLE, "Open a .bin file first.")
             return
         out_dir = self.bin_out.get()
         if not out_dir:
-            messagebox.showwarning(APP_TITLE, "Elige una carpeta de destino.")
+            messagebox.showwarning(APP_TITLE, "Choose an output folder.")
             return
         indices = None
         if only_selected:
             indices = [int(i) for i in self.bin_tree.selection()]
             if not indices:
-                messagebox.showwarning(APP_TITLE, "No hay archivos seleccionados.")
+                messagebox.showwarning(APP_TITLE, "No files selected.")
                 return
 
         def done(count):
             if not self.bin_pack_in.get():
                 self.bin_pack_in.set(out_dir)
-            self._ask_open(f"Se extrajeron {count} archivos en:\n{out_dir}", out_dir)
+            self._ask_open(f"Extracted {count} files to:\n{out_dir}", out_dir)
 
         self.run_task(fvp_bin.extract, (self.bin_path.get(), out_dir),
-                      {"auto_ext": self.bin_auto_ext.get(), "indices": indices}, "Extrayendo", done)
+                      {"auto_ext": self.bin_auto_ext.get(), "indices": indices}, "Extracting", done)
 
     def browse_bin_pack_in(self):
-        path = filedialog.askdirectory(title="Carpeta con los archivos a empaquetar")
+        path = filedialog.askdirectory(title="Folder with the files to pack")
         if path:
             self.bin_pack_in.set(path)
             if not self.bin_pack_out.get():
@@ -327,20 +327,20 @@ class App(ctk.CTk):
                 self.bin_pack_out.set(p.parent / f"{p.name}_new.bin")
 
     def browse_bin_pack_out(self):
-        path = self._ask_save("Guardar archivo .bin", self.bin_pack_out.get() or "nuevo.bin",
-                              ".bin", [("Archivos BIN", "*.bin"), ("Todos", "*.*")])
+        path = self._ask_save("Save .bin file", self.bin_pack_out.get() or "new.bin",
+                              ".bin", [("BIN files", "*.bin"), ("All", "*.*")])
         if path:
             self.bin_pack_out.set(path)
 
     def start_bin_pack(self):
         in_dir, out_file = self.bin_pack_in.get(), self.bin_pack_out.get()
         if not in_dir or not Path(in_dir).is_dir():
-            messagebox.showwarning(APP_TITLE, "Elige una carpeta de entrada válida.")
+            messagebox.showwarning(APP_TITLE, "Choose a valid input folder.")
             return
         if not self._check_output(out_file, in_dir):
             return
-        self.run_task(fvp_bin.pack, (in_dir, out_file), {}, "Empaquetando",
-                      lambda n: self._ask_open(f"Archivo creado ({n} archivos):\n{out_file}",
+        self.run_task(fvp_bin.pack, (in_dir, out_file), {}, "Packing",
+                      lambda n: self._ask_open(f"File created ({n} files):\n{out_file}",
                                                Path(out_file).parent))
 
     # ----------------------------------------------------------- Pestaña NVSG
@@ -354,13 +354,13 @@ class App(ctk.CTk):
         dec.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(dec, text="NVSG → PNG", font=ctk.CTkFont(weight="bold")) \
             .grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
-        self.nv_dec_in = PathRow(dec, 1, "Carpeta NVSG:", self.browse_nv_dec_in)
-        self.nv_dec_out = PathRow(dec, 2, "Carpeta PNG:", lambda: self._browse_dir(self.nv_dec_out))
+        self.nv_dec_in = PathRow(dec, 1, "NVSG folder:", self.browse_nv_dec_in)
+        self.nv_dec_out = PathRow(dec, 2, "PNG folder:", lambda: self._browse_dir(self.nv_dec_out))
         self._busy(self.nv_dec_in.button, self.nv_dec_out.button)
         self.nv_dec_in.entry.bind("<Return>", lambda _e: self._list_nvsg_folder(self.nv_dec_in.get()))
-        muted(ctk.CTkLabel, dec, text=f"Genera {fvp_nvsg.LOG_NAME} con los datos necesarios para volver a codificar.") \
+        muted(ctk.CTkLabel, dec, text=f"Writes {fvp_nvsg.LOG_NAME} with the data needed to encode again.") \
             .grid(row=3, column=1, sticky="w")
-        self._busy(ctk.CTkButton(dec, text="Decodificar", width=140, command=self.start_nv_decode)) \
+        self._busy(ctk.CTkButton(dec, text="Decode", width=140, command=self.start_nv_decode)) \
             .grid(row=3, column=2, sticky="e", padx=4, pady=(2, 8))
 
         enc = ctk.CTkFrame(tab)
@@ -368,18 +368,18 @@ class App(ctk.CTk):
         enc.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(enc, text="PNG → NVSG", font=ctk.CTkFont(weight="bold")) \
             .grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
-        self.nv_enc_in = PathRow(enc, 1, "Carpeta PNG:", self.browse_nv_enc_in)
+        self.nv_enc_in = PathRow(enc, 1, "PNG folder:", self.browse_nv_enc_in)
         self.nv_enc_log = PathRow(enc, 2, "decode_log.txt:", self.browse_nv_log)
-        self.nv_enc_out = PathRow(enc, 3, "Carpeta NVSG:", lambda: self._browse_dir(self.nv_enc_out))
+        self.nv_enc_out = PathRow(enc, 3, "NVSG folder:", lambda: self._browse_dir(self.nv_enc_out))
         self._busy(self.nv_enc_in.button, self.nv_enc_log.button, self.nv_enc_out.button)
-        self._busy(ctk.CTkButton(enc, text="Codificar", width=140, command=self.start_nv_encode)) \
+        self._busy(ctk.CTkButton(enc, text="Encode", width=140, command=self.start_nv_encode)) \
             .grid(row=4, column=2, sticky="e", padx=4, pady=(2, 8))
 
         body = ctk.CTkFrame(tab, fg_color="transparent")
         body.grid(row=2, column=0, sticky="nsew", padx=4, pady=4)
         body.grid_columnconfigure(0, weight=1)
         body.grid_rowconfigure(0, weight=1)
-        frame, self.nv_tree = self._make_tree(body, ("name", "size"), ("Archivos de la carpeta", "Tamaño"),
+        frame, self.nv_tree = self._make_tree(body, ("name", "size"), ("Files in the folder", "Size"),
                                               (380, 100), {"size": "e"})
         self.nv_tree.configure(selectmode="browse")
         frame.grid(row=0, column=0, sticky="nsew")
@@ -393,7 +393,7 @@ class App(ctk.CTk):
             row.set(path)
 
     def browse_nv_dec_in(self):
-        path = filedialog.askdirectory(title="Carpeta con archivos NVSG")
+        path = filedialog.askdirectory(title="Folder with NVSG files")
         if path:
             self.nv_dec_in.set(path)
             if not self.nv_dec_out.get():
@@ -401,7 +401,7 @@ class App(ctk.CTk):
             self._list_nvsg_folder(path)
 
     def browse_nv_enc_in(self):
-        path = filedialog.askdirectory(title="Carpeta con los PNG")
+        path = filedialog.askdirectory(title="Folder with the PNG files")
         if path:
             self.nv_enc_in.set(path)
             log = Path(path) / fvp_nvsg.LOG_NAME
@@ -412,8 +412,8 @@ class App(ctk.CTk):
             self._list_nvsg_folder(path)
 
     def browse_nv_log(self):
-        path = filedialog.askopenfilename(title=f"Abrir {fvp_nvsg.LOG_NAME}",
-                                          filetypes=[("Texto", "*.txt"), ("Todos", "*.*")])
+        path = filedialog.askopenfilename(title=f"Open {fvp_nvsg.LOG_NAME}",
+                                          filetypes=[("Text", "*.txt"), ("All", "*.*")])
         if path:
             self.nv_enc_log.set(path)
 
@@ -439,37 +439,37 @@ class App(ctk.CTk):
     def start_nv_decode(self):
         in_dir, out_dir = self.nv_dec_in.get(), self.nv_dec_out.get()
         if not in_dir or not Path(in_dir).is_dir() or not out_dir:
-            messagebox.showwarning(APP_TITLE, "Elige la carpeta NVSG y la carpeta PNG.")
+            messagebox.showwarning(APP_TITLE, "Choose the NVSG folder and the PNG folder.")
             return
 
         def done(result):
             count, errors = result
             self.nv_enc_in.set(out_dir)
             self.nv_enc_log.set(Path(out_dir) / fvp_nvsg.LOG_NAME)
-            msg = f"Se decodificaron {count} imágenes en:\n{out_dir}"
+            msg = f"Decoded {count} images to:\n{out_dir}"
             if errors:
-                msg += f"\n\n{len(errors)} archivos no son NVSG o fallaron:\n" + "\n".join(errors[:8])
+                msg += f"\n\n{len(errors)} files are not NVSG or failed:\n" + "\n".join(errors[:8])
             self._ask_open(msg, out_dir)
 
-        self.run_task(fvp_nvsg.batch_decode, (in_dir, out_dir), {}, "Decodificando", done)
+        self.run_task(fvp_nvsg.batch_decode, (in_dir, out_dir), {}, "Decoding", done)
 
     def start_nv_encode(self):
         in_dir, log, out_dir = self.nv_enc_in.get(), self.nv_enc_log.get(), self.nv_enc_out.get()
         if not in_dir or not Path(in_dir).is_dir() or not out_dir:
-            messagebox.showwarning(APP_TITLE, "Elige la carpeta PNG y la carpeta de salida.")
+            messagebox.showwarning(APP_TITLE, "Choose the PNG folder and the output folder.")
             return
         if not log or not Path(log).is_file():
-            messagebox.showwarning(APP_TITLE, f"Elige el archivo {fvp_nvsg.LOG_NAME}.")
+            messagebox.showwarning(APP_TITLE, f"Choose the {fvp_nvsg.LOG_NAME} file.")
             return
 
         def done(result):
             count, missing = result
-            msg = f"Se codificaron {count} imágenes en:\n{out_dir}"
+            msg = f"Encoded {count} images to:\n{out_dir}"
             if missing:
-                msg += f"\n\n{len(missing)} PNG sin entrada en el log (omitidos):\n" + "\n".join(missing[:8])
+                msg += f"\n\n{len(missing)} PNG files without a log entry (skipped):\n" + "\n".join(missing[:8])
             self._ask_open(msg, out_dir)
 
-        self.run_task(fvp_nvsg.batch_encode, (in_dir, out_dir, log), {}, "Codificando", done)
+        self.run_task(fvp_nvsg.batch_encode, (in_dir, out_dir, log), {}, "Encoding", done)
 
     # ------------------------------------------------------------ Pestaña HCB
 
@@ -477,45 +477,45 @@ class App(ctk.CTk):
         tab.grid_columnconfigure(1, weight=1)
         tab.grid_rowconfigure(7, weight=1)
 
-        self.hcb_path = PathRow(tab, 0, "Script .hcb:", self.browse_hcb, "Abrir…")
-        self.hcb_strings = PathRow(tab, 1, "Archivo de textos:", self.browse_hcb_strings)
-        self.hcb_charmap = PathRow(tab, 2, "Tabla de caracteres:", self.browse_charmap)
+        self.hcb_path = PathRow(tab, 0, ".hcb script:", self.browse_hcb, "Open…")
+        self.hcb_strings = PathRow(tab, 1, "Text file:", self.browse_hcb_strings)
+        self.hcb_charmap = PathRow(tab, 2, "Character table:", self.browse_charmap)
         self._busy(self.hcb_path.button, self.hcb_strings.button, self.hcb_charmap.button)
 
         ext = ctk.CTkFrame(tab)
         ext.grid(row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=(6, 4))
-        ctk.CTkLabel(ext, text="Extraer", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=8, pady=6)
+        ctk.CTkLabel(ext, text="Extract", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=8, pady=6)
         self.hcb_decompile = tk.BooleanVar(value=False)
         self.hcb_reverse = tk.BooleanVar(value=False)
-        self._busy(ctk.CTkCheckBox(ext, text="También descompilar", variable=self.hcb_decompile)) \
+        self._busy(ctk.CTkCheckBox(ext, text="Also decompile", variable=self.hcb_decompile)) \
             .pack(side="left", padx=8)
-        self._busy(ctk.CTkCheckBox(ext, text="Aplicar tabla inversa (HCB ya traducido)",
+        self._busy(ctk.CTkCheckBox(ext, text="Apply table in reverse (HCB already translated)",
                                    variable=self.hcb_reverse)).pack(side="left", padx=8)
-        self._busy(ctk.CTkButton(ext, text="Extraer textos", width=140, command=self.start_hcb_extract)) \
+        self._busy(ctk.CTkButton(ext, text="Extract text", width=140, command=self.start_hcb_extract)) \
             .pack(side="right", padx=8, pady=6)
 
         reb = ctk.CTkFrame(tab)
         reb.grid(row=4, column=0, columnspan=3, sticky="ew", padx=4, pady=(0, 4))
         reb.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(reb, text="Reconstruir", font=ctk.CTkFont(weight="bold")) \
+        ctk.CTkLabel(reb, text="Rebuild", font=ctk.CTkFont(weight="bold")) \
             .grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
-        self.hcb_out = PathRow(reb, 1, "Script de salida:", self.browse_hcb_out, "Guardar como…")
+        self.hcb_out = PathRow(reb, 1, "Output script:", self.browse_hcb_out, "Save as…")
         self._busy(self.hcb_out.button)
-        ctk.CTkLabel(reb, text="Modo:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=3)
+        ctk.CTkLabel(reb, text="Mode:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=3)
         self.hcb_mode = tk.StringVar(value=MODE_RELOC)
         self._busy(ctk.CTkSegmentedButton(reb, values=[MODE_RELOC, MODE_FIXED], variable=self.hcb_mode)) \
             .grid(row=2, column=1, sticky="w", pady=3)
-        self._busy(ctk.CTkButton(reb, text="Reconstruir", width=140, command=self.start_hcb_rebuild)) \
+        self._busy(ctk.CTkButton(reb, text="Rebuild", width=140, command=self.start_hcb_rebuild)) \
             .grid(row=2, column=2, sticky="e", padx=4, pady=(3, 8))
         muted(ctk.CTkLabel, reb, justify="left", anchor="w",
-              text=f"Reubicar: cada texto puede crecer hasta {fvp_hcb.MAX_STRING_BYTES} bytes "
-                   f"(≈{fvp_hcb.MAX_STRING_BYTES} letras sin acentos, la mitad en caracteres japoneses).\n"
-                   "Tamaño fijo: comportamiento anterior; los textos más largos que el original se cortan.") \
+              text=f"Relocate: each text can grow up to {fvp_hcb.MAX_STRING_BYTES} bytes "
+                   f"(≈{fvp_hcb.MAX_STRING_BYTES} unaccented letters, half as many Japanese characters).\n"
+                   "Fixed size: the old behavior; texts longer than the original are cut.") \
             .grid(row=3, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 6))
 
         bar = ctk.CTkFrame(tab, fg_color="transparent")
         bar.grid(row=5, column=0, columnspan=3, sticky="ew", padx=4)
-        self.report_label = muted(ctk.CTkLabel, bar, text="El informe aparecerá aquí tras reconstruir.",
+        self.report_label = muted(ctk.CTkLabel, bar, text="The report will appear here after rebuilding.",
                                   anchor="w", justify="left", wraplength=640)
         self.report_label.pack(side="left", fill="x", expand=True)
         self.report_filter = ctk.CTkOptionMenu(bar, values=list(REPORT_FILTERS), width=200,
@@ -524,20 +524,20 @@ class App(ctk.CTk):
 
         frame, self.report_tree = self._make_tree(
             tab, ("id", "addr", "bytes", "state", "detail"),
-            ("ID", "Dirección", "Bytes", "Estado", "Detalle"), (70, 100, 90, 200, 0))
+            ("ID", "Address", "Bytes", "Status", "Detail"), (70, 100, 90, 200, 0))
         frame.grid(row=7, column=0, columnspan=3, sticky="nsew", padx=4, pady=4)
 
         tools = ctk.CTkFrame(tab, fg_color="transparent")
         tools.grid(row=8, column=0, columnspan=3, sticky="ew", padx=4)
-        muted(ctk.CTkLabel, tools, text="Proyectos grandes:").pack(side="left")
-        self._busy(ctk.CTkButton(tools, text="Dividir en partes…", width=140, command=self.hcb_split)) \
+        muted(ctk.CTkLabel, tools, text="Large projects:").pack(side="left")
+        self._busy(ctk.CTkButton(tools, text="Split into parts…", width=140, command=self.hcb_split)) \
             .pack(side="left", padx=8)
-        self._busy(ctk.CTkButton(tools, text="Unir partes…", width=120, command=self.hcb_merge)) \
+        self._busy(ctk.CTkButton(tools, text="Merge parts…", width=120, command=self.hcb_merge)) \
             .pack(side="left")
 
     def browse_hcb(self):
-        path = filedialog.askopenfilename(title="Abrir script .hcb",
-                                          filetypes=[("Scripts HCB", "*.hcb"), ("Todos", "*.*")])
+        path = filedialog.askopenfilename(title="Open .hcb script",
+                                          filetypes=[("HCB scripts", "*.hcb"), ("All", "*.*")])
         if path:
             self.hcb_path.set(path)
             p = Path(path)
@@ -548,22 +548,22 @@ class App(ctk.CTk):
 
     def browse_hcb_strings(self):
         path = filedialog.asksaveasfilename(
-            title="Archivo de textos (existente para reconstruir, nuevo para extraer)",
+            title="Text file (an existing one to rebuild, a new one to extract)",
             defaultextension=".txt", confirmoverwrite=False,
             initialfile=Path(self.hcb_strings.get() or "strings.txt").name,
-            filetypes=[("Texto", "*.txt"), ("Todos", "*.*")])
+            filetypes=[("Text", "*.txt"), ("All", "*.*")])
         if path:
             self.hcb_strings.set(path)
 
     def browse_charmap(self):
-        path = filedialog.askopenfilename(title="Tabla de caracteres",
-                                          filetypes=[("Texto", "*.txt"), ("Todos", "*.*")])
+        path = filedialog.askopenfilename(title="Character table",
+                                          filetypes=[("Text", "*.txt"), ("All", "*.*")])
         if path:
             self.hcb_charmap.set(path)
 
     def browse_hcb_out(self):
-        path = self._ask_save("Guardar script .hcb", self.hcb_out.get() or "nuevo.hcb", ".hcb",
-                              [("Scripts HCB", "*.hcb"), ("Todos", "*.*")])
+        path = self._ask_save("Save .hcb script", self.hcb_out.get() or "new.hcb", ".hcb",
+                              [("HCB scripts", "*.hcb"), ("All", "*.*")])
         if path:
             self.hcb_out.set(path)
 
@@ -575,27 +575,27 @@ class App(ctk.CTk):
         try:
             return True, fvp_hcb.CharMap.load(path)
         except Exception as e:
-            messagebox.showerror(APP_TITLE, f"Error en la tabla de caracteres:\n{e}")
+            messagebox.showerror(APP_TITLE, f"Error in the character table:\n{e}")
             return False, None
 
     def start_hcb_extract(self):
         hcb, strings = self.hcb_path.get(), self.hcb_strings.get()
         if not hcb or not Path(hcb).is_file():
-            messagebox.showwarning(APP_TITLE, "Elige un script .hcb.")
+            messagebox.showwarning(APP_TITLE, "Choose a .hcb script.")
             return
         if not strings:
-            messagebox.showwarning(APP_TITLE, "Elige dónde guardar el archivo de textos.")
+            messagebox.showwarning(APP_TITLE, "Choose where to save the text file.")
             return
         if Path(strings).exists() and not messagebox.askyesno(
-                APP_TITLE, f"{Path(strings).name} ya existe y se sobrescribirá.\n"
-                           "Si contiene tu traducción, se perderá. ¿Continuar?"):
+                APP_TITLE, f"{Path(strings).name} already exists and will be overwritten.\n"
+                           "If it contains your translation, it will be lost. Continue?"):
             return
         ok, charmap = self._load_charmap()
         if not ok:
             return
         reverse = self.hcb_reverse.get()
         if reverse and not charmap:
-            messagebox.showwarning(APP_TITLE, "Para la tabla inversa hace falta una tabla de caracteres.")
+            messagebox.showwarning(APP_TITLE, "Applying the table in reverse needs a character table.")
             return
 
         if self.hcb_decompile.get():
@@ -603,31 +603,31 @@ class App(ctk.CTk):
             fn, args = fvp_hcb.decompile, (hcb, out, strings)
 
             def done(result):
-                self._ask_open(f"{result[1]} textos en:\n{strings}\n\nDescompilado ({result[0]} funciones):\n{out}",
+                self._ask_open(f"{result[1]} lines in:\n{strings}\n\nDecompiled ({result[0]} functions):\n{out}",
                                Path(strings).parent)
         else:
             fn, args = fvp_hcb.extract_strings, (hcb, strings)
 
             def done(count):
-                self._ask_open(f"Se extrajeron {count} textos en:\n{strings}", Path(strings).parent)
+                self._ask_open(f"Extracted {count} lines to:\n{strings}", Path(strings).parent)
 
-        self.run_task(fn, args, {"charmap": charmap, "reverse": reverse}, "Extrayendo textos", done)
+        self.run_task(fn, args, {"charmap": charmap, "reverse": reverse}, "Extracting text", done)
 
     def start_hcb_rebuild(self):
         hcb, strings, out = self.hcb_path.get(), self.hcb_strings.get(), self.hcb_out.get()
         if not hcb or not Path(hcb).is_file():
-            messagebox.showwarning(APP_TITLE, "Elige el script .hcb original.")
+            messagebox.showwarning(APP_TITLE, "Choose the original .hcb script.")
             return
         if not strings or not Path(strings).is_file():
-            messagebox.showwarning(APP_TITLE, "Elige el archivo de textos traducido.")
+            messagebox.showwarning(APP_TITLE, "Choose the translated text file.")
             return
         if not out:
-            messagebox.showwarning(APP_TITLE, "Elige el script de salida.")
+            messagebox.showwarning(APP_TITLE, "Choose the output script.")
             return
         if Path(out).resolve() == Path(hcb).resolve():
-            messagebox.showwarning(APP_TITLE, "El script de salida no puede ser el original.")
+            messagebox.showwarning(APP_TITLE, "The output script cannot be the original.")
             return
-        if Path(out).exists() and not messagebox.askyesno(APP_TITLE, f"{Path(out).name} ya existe.\n¿Sobrescribirlo?"):
+        if Path(out).exists() and not messagebox.askyesno(APP_TITLE, f"{Path(out).name} already exists.\nOverwrite it?"):
             return
         ok, charmap = self._load_charmap()
         if not ok:
@@ -636,19 +636,19 @@ class App(ctk.CTk):
 
         def done(rep: fvp_hcb.RebuildReport):
             self.report = rep
-            text = rep.summary() + f".  Tamaño: {format_size(rep.original_size)} → {format_size(rep.new_size)}"
+            text = rep.summary() + f".  Size: {format_size(rep.original_size)} → {format_size(rep.new_size)}"
             if rep.warnings:
                 text += "\n" + " · ".join(rep.warnings[:3])
             self.report_label.configure(text=text)
             self._refresh_report()
             problems = rep.count(fvp_hcb.ST_CUT) + rep.count(fvp_hcb.ST_UNSUPPORTED)
-            msg = f"Script creado:\n{out}\n\n{rep.summary()}"
+            msg = f"Script created:\n{out}\n\n{rep.summary()}"
             if problems:
-                msg += f"\n\n{problems} textos con avisos: revisa el informe."
+                msg += f"\n\n{problems} lines with warnings: check the report."
             self._ask_open(msg, Path(out).parent)
 
         self.run_task(fvp_hcb.rebuild, (hcb, strings, out), {"charmap": charmap, "mode": mode},
-                      "Reconstruyendo", done)
+                      "Rebuilding", done)
 
     def _refresh_report(self):
         self.report_tree.delete(*self.report_tree.get_children())
@@ -662,11 +662,11 @@ class App(ctk.CTk):
                                             ", ".join(e.flags), e.detail))
         if len(rows) > MAX_REPORT_ROWS:
             self.report_tree.insert("", "end", iid="more", text="…",
-                                    values=("", "", f"{len(rows) - MAX_REPORT_ROWS} más", ""))
+                                    values=("", "", f"{len(rows) - MAX_REPORT_ROWS} more", ""))
 
     def hcb_split(self):
-        path = filedialog.askopenfilename(title="Archivo de textos con etiquetas <part>",
-                                          filetypes=[("Texto", "*.txt"), ("Todos", "*.*")])
+        path = filedialog.askopenfilename(title="Text file with <part> tags",
+                                          filetypes=[("Text", "*.txt"), ("All", "*.*")])
         if not path:
             return
         try:
@@ -677,13 +677,13 @@ class App(ctk.CTk):
         messagebox.showinfo(APP_TITLE, "\n".join(messages[:30]))
 
     def hcb_merge(self):
-        build = filedialog.askopenfilename(title="Script de build (lista de partes)",
-                                           filetypes=[("Texto", "*.txt"), ("Todos", "*.*")])
+        build = filedialog.askopenfilename(title="Build script (list of parts)",
+                                           filetypes=[("Text", "*.txt"), ("All", "*.*")])
         if not build:
             return
-        out = filedialog.asksaveasfilename(title="Guardar textos unidos", defaultextension=".txt",
+        out = filedialog.asksaveasfilename(title="Save merged text", defaultextension=".txt",
                                            initialfile="merged_strings.txt",
-                                           filetypes=[("Texto", "*.txt"), ("Todos", "*.*")])
+                                           filetypes=[("Text", "*.txt"), ("All", "*.*")])
         if not out:
             return
         try:
@@ -692,7 +692,7 @@ class App(ctk.CTk):
             messagebox.showerror(APP_TITLE, str(e))
             return
         self.hcb_strings.set(out)
-        messagebox.showinfo(APP_TITLE, f"{count} textos unidos en:\n{out}\n\n" + "\n".join(messages[:30]))
+        messagebox.showinfo(APP_TITLE, f"{count} lines merged into:\n{out}\n\n" + "\n".join(messages[:30]))
 
     # ------------------------------------------------------------ Comunes
 
@@ -704,18 +704,18 @@ class App(ctk.CTk):
 
     def _check_output(self, out_file, in_dir=None):
         if not out_file:
-            messagebox.showwarning(APP_TITLE, "Elige el archivo de salida.")
+            messagebox.showwarning(APP_TITLE, "Choose the output file.")
             return False
         out_path = Path(out_file).resolve()
         if in_dir and Path(in_dir).resolve() in out_path.parents:
-            messagebox.showwarning(APP_TITLE, "El archivo de salida no puede estar dentro de la carpeta de entrada.")
+            messagebox.showwarning(APP_TITLE, "The output file cannot be inside the input folder.")
             return False
-        if out_path.exists() and not messagebox.askyesno(APP_TITLE, f"{out_path.name} ya existe.\n¿Sobrescribirlo?"):
+        if out_path.exists() and not messagebox.askyesno(APP_TITLE, f"{out_path.name} already exists.\nOverwrite it?"):
             return False
         return True
 
     def _ask_open(self, msg, folder):
-        if messagebox.askyesno(APP_TITLE, f"{msg}\n\n¿Abrir la carpeta?"):
+        if messagebox.askyesno(APP_TITLE, f"{msg}\n\nOpen the folder?"):
             open_folder(folder)
 
     def _build_status_bar(self):
@@ -726,18 +726,18 @@ class App(ctk.CTk):
         self.progress = ctk.CTkProgressBar(bar)
         self.progress.set(0)
         self.progress.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 4))
-        self.status = ctk.CTkLabel(bar, text="Listo", anchor="w")
+        self.status = ctk.CTkLabel(bar, text="Ready", anchor="w")
         self.status.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 8))
 
-        self.cancel_btn = ctk.CTkButton(bar, text="Cancelar", width=90, state="disabled",
+        self.cancel_btn = ctk.CTkButton(bar, text="Cancel", width=90, state="disabled",
                                         fg_color="#b23b3b", hover_color="#8f2f2f",
                                         command=self.cancel_task)
         self.cancel_btn.grid(row=0, column=2, rowspan=2, padx=(0, 10))
-        ctk.CTkOptionMenu(bar, values=["Sistema", "Claro", "Oscuro"], width=100,
+        ctk.CTkOptionMenu(bar, values=["System", "Light", "Dark"], width=100,
                           command=self._change_theme).grid(row=0, column=3, rowspan=2, padx=(0, 10))
 
     def _change_theme(self, value):
-        ctk.set_appearance_mode({"Sistema": "system", "Claro": "light", "Oscuro": "dark"}[value])
+        ctk.set_appearance_mode({"System": "system", "Light": "light", "Dark": "dark"}[value])
         self.after(10, self._apply_tree_style)
 
     def _apply_tree_style(self):
@@ -791,11 +791,11 @@ class App(ctk.CTk):
                         counter = f" [{i + 1}/{total}]" if not name.endswith("…") else ""
                         self.status.configure(text=f"{self._task_label}{counter}  {name}")
                 elif kind == "done":
-                    self._finish("Completado")
+                    self._finish("Done")
                     self.progress.set(1)
                     self._task_done(data)
                 elif kind == "cancelled":
-                    self._finish("Cancelado")
+                    self._finish("Cancelled")
                 elif kind == "error":
                     self._finish("Error")
                     messagebox.showerror(APP_TITLE, str(data))
@@ -809,7 +809,7 @@ class App(ctk.CTk):
 
     def cancel_task(self):
         self.cancel_event.set()
-        self.status.configure(text="Cancelando…")
+        self.status.configure(text="Cancelling…")
 
     def _set_busy(self, busy):
         state = "disabled" if busy else "normal"

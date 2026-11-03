@@ -56,15 +56,15 @@ def read_index(pd_file) -> Tuple[str, List[PDEntry], List[str]]:
     with open(pd_file, 'rb') as f:
         mode = f.read(8).decode('latin-1').rstrip('\x00')
         if mode not in MODES:
-            raise ValueError(f"Formato desconocido: {mode!r}")
+            raise ValueError(f"Unknown format: {mode!r}")
 
         if f.read(56) != b'\x00' * 56:
-            warnings.append("Advertencia: padding no es cero")
+            warnings.append("Warning: padding is not zero")
 
         file_count = read_uint64_le(f)
         table = f.read(ENTRY_SIZE * file_count)
         if len(table) != ENTRY_SIZE * file_count:
-            raise ValueError("Directorio truncado o archivo corrupto")
+            raise ValueError("Truncated directory or corrupt file")
 
     entries = []
     for i in range(file_count):
@@ -79,7 +79,7 @@ def _safe_output_path(out_dir: Path, name: str) -> Path:
     """Convierte el nombre interno en ruta, impidiendo salir de out_dir."""
     parts = [p for p in name.replace('\\', '/').split('/') if p not in ('', '.', '..')]
     if not parts:
-        raise ValueError(f"Nombre de archivo inválido: {name!r}")
+        raise ValueError(f"Invalid file name: {name!r}")
     return out_dir.joinpath(*parts)
 
 
@@ -111,7 +111,7 @@ def extract(pd_file, out_dir, names: Optional[Iterable[str]] = None,
             f.seek(entry.offset)
             data = f.read(entry.size)
             if len(data) != entry.size:
-                raise ValueError(f"Datos truncados: {entry.name}")
+                raise ValueError(f"Truncated data: {entry.name}")
 
             out_path = _safe_output_path(out_dir, entry.name)
             out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -155,12 +155,12 @@ def resolve_mode(in_dir, mode: Optional[str] = None) -> Tuple[str, str]:
     """Devuelve (modo, origen) donde origen explica de dónde salió el modo."""
     if mode is not None:
         if mode not in MODES:
-            raise ValueError(f"Modo inválido: {mode}. Usa 'PackOnly' o 'PackPlus'")
+            raise ValueError(f"Invalid mode: {mode}. Use 'PackOnly' or 'PackPlus'")
         return mode, 'manual'
     info = read_info(in_dir)
     if info:
         return info['mode'], INFO_FILE
-    return DEFAULT_MODE, 'por defecto'
+    return DEFAULT_MODE, 'default'
 
 
 def collect_files(in_dir) -> List[Tuple[str, Path]]:
@@ -197,16 +197,16 @@ def pack(in_dir, pd_file, mode: Optional[str] = None,
     mode, _ = resolve_mode(in_dir, mode)
     files = collect_files(in_dir)
     if not files:
-        raise ValueError("Directorio vacío o inválido")
+        raise ValueError("Empty or invalid folder")
 
     encoded_names = []
     for name, _ in files:
         try:
             name_bytes = name.encode('latin-1')
         except UnicodeEncodeError:
-            raise ValueError(f"Nombre con caracteres no soportados (latin-1): {name}")
+            raise ValueError(f"Name with unsupported characters (latin-1): {name}")
         if len(name_bytes) > NAME_SIZE:
-            raise ValueError(f"Nombre demasiado largo: {name}")
+            raise ValueError(f"Name too long: {name}")
         encoded_names.append(name_bytes)
 
     pd_file = Path(pd_file)

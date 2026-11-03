@@ -60,11 +60,11 @@ def read_index(bin_path) -> List[BinEntry]:
     with open(bin_path, 'rb') as f:
         header = f.read(8)
         if len(header) != 8:
-            raise ValueError("Archivo demasiado pequeño para ser un .bin")
+            raise ValueError("File too small to be a .bin")
         file_count, names_size = struct.unpack('<II', header)
         table = f.read(12 * file_count)
         if len(table) != 12 * file_count:
-            raise ValueError("Tabla de archivos truncada o archivo no válido")
+            raise ValueError("Truncated file table or invalid file")
         names = f.read(names_size)
 
     entries = []
@@ -162,14 +162,14 @@ def pack(input_folder, bin_path, progress=None, cancel=None) -> int:
     """Empaqueta los archivos de una carpeta en un .bin."""
     files = collect_files(input_folder)
     if not files:
-        raise ValueError("Carpeta vacía")
+        raise ValueError("Empty folder")
 
     names = []
     for _, name in files:
         try:
             names.append(name.encode('shift_jis') + b'\x00')
         except UnicodeEncodeError:
-            raise ValueError(f"Nombre con caracteres no soportados (Shift_JIS): {name}")
+            raise ValueError(f"Name with unsupported characters (Shift_JIS): {name}")
 
     file_count = len(files)
     table_size = file_count * 12

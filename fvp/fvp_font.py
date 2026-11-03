@@ -42,21 +42,21 @@ def patch_font(base_font, charmap_path, output_font, family=None) -> List[Tuple[
     """
     charmap = CharMap.load(charmap_path)
     if not charmap.pairs:
-        raise ValueError("La tabla de caracteres está vacía")
+        raise ValueError("The character table is empty")
 
     font = TTFont(base_font)
     best = font.getBestCmap()
     subtables = [t for t in font['cmap'].tables if t.isUnicode() and t.format in (4, 12)]
     if not subtables:
-        raise ValueError("La fuente no tiene una tabla cmap Unicode compatible")
+        raise ValueError("The font has no compatible Unicode cmap table")
 
     changes = []
     for src, dst in charmap.pairs.items():
         if len(src) != 1 or len(dst) != 1:
-            raise ValueError(f"Para la fuente cada pareja debe ser de un carácter: '{src}={dst}'")
+            raise ValueError(f"For the font, each pair must be one character each: '{src}={dst}'")
         glyph = best.get(ord(src))
         if glyph is None:
-            raise ValueError(f"La fuente base no tiene el carácter '{src}' (U+{ord(src):04X})")
+            raise ValueError(f"The base font does not have the character '{src}' (U+{ord(src):04X})")
         for table in subtables:
             table.cmap[ord(dst)] = glyph
         changes.append((src, dst, glyph))

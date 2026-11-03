@@ -20,40 +20,40 @@ def cmd_list(pd_file: str):
     mode, entries, warnings = pd_core.read_index(pd_file)
     for w in warnings:
         print(w)
-    print(f"{pd_file}: {len(entries)} archivos ({mode})")
+    print(f"{pd_file}: {len(entries)} files ({mode})")
     for e in entries:
         print(f" {e.size:>12}  {e.name}")
     print(f"Total: {sum(e.size for e in entries)} bytes")
 
 
 def cmd_extract(pd_file: str, out_dir: str):
-    print(f"Extrayendo desde {pd_file}...")
+    print(f"Extracting from {pd_file}...")
     mode, count = pd_core.extract(pd_file, out_dir, progress=print_progress)
-    print(f"Extracción completada: {count} archivos ({mode}) en {out_dir}")
+    print(f"Extraction complete: {count} files ({mode}) in {out_dir}")
 
 
 def cmd_pack(in_dir: str, pd_file: str, mode=None):
     mode, source = pd_core.resolve_mode(in_dir, mode)
-    print(f"Empaquetando {in_dir} en {pd_file} ({mode}, {source})...")
+    print(f"Packing {in_dir} into {pd_file} ({mode}, {source})...")
     mode, count = pd_core.pack(in_dir, pd_file, mode, progress=print_progress)
-    print(f"Paquete creado: {pd_file} ({count} archivos)")
+    print(f"Archive created: {pd_file} ({count} files)")
 
 
 def usage():
-    print("CrossChannel MultiTool - Extractor/Empaquetador .PD")
+    print("CrossChannel MultiTool - .PD extractor/packer")
     print()
-    print("Uso:")
-    print("  python crosschannel_tool.py                 (abre la interfaz gráfica)")
-    print("  python crosschannel_tool.py list <archivo.PD>")
-    print("  python crosschannel_tool.py extract <archivo.PD> <directorio_salida>")
-    print("  python crosschannel_tool.py pack <directorio_entrada> <archivo.PD> [PackOnly|PackPlus]")
+    print("Usage:")
+    print("  python crosschannel_tool.py                 (opens the graphical interface)")
+    print("  python crosschannel_tool.py list <file.PD>")
+    print("  python crosschannel_tool.py extract <file.PD> <output_folder>")
+    print("  python crosschannel_tool.py pack <input_folder> <file.PD> [PackOnly|PackPlus]")
     print()
-    print("Si se omite el modo en 'pack', se usa el de _pdinfo.json (creado al extraer)")
-    print("o PackPlus por defecto.")
+    print("If 'pack' has no mode, the one in _pdinfo.json (created when extracting) is used,")
+    print("or PackPlus by default.")
     print()
-    print("Ejemplos:")
+    print("Examples:")
     print("  python crosschannel_tool.py extract cg.pd output_cg")
-    print("  python crosschannel_tool.py pack output_cg nuevo.pd")
+    print("  python crosschannel_tool.py pack output_cg new.pd")
 
 
 def main():
@@ -66,8 +66,8 @@ def main():
         try:
             import crosschannel_gui
         except ImportError as e:
-            print(f"No se pudo abrir la interfaz gráfica: {e}")
-            print("Instala las dependencias con: pip install -r requirements.txt")
+            print(f"Could not open the graphical interface: {e}")
+            print("Install the dependencies with: pip install -r requirements.txt")
             print()
             usage()
             return
@@ -87,7 +87,7 @@ def main():
         else:
             usage()
     except KeyboardInterrupt:
-        print("Cancelado")
+        print("Cancelled")
         sys.exit(1)
     except Exception as e:
         print(f"Error: {e}")

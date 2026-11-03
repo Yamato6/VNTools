@@ -32,9 +32,9 @@ A Python tool for extracting and repacking `.PD` archive files used by the **FS 
 python crosschannel_gui.py
 ```
 
-- **Extraer** tab: open a `.PD`, browse/filter its file list, and extract everything or only the selected files.
-- **Empaquetar** tab: pick a folder and an output `.PD`. In `Auto` mode the archive mode is taken from `_pdinfo.json`.
-- Progress bar with a **Cancelar** button; cancelling never leaves a half-written `.PD` behind (an existing file is kept intact).
+- **Extract** tab: open a `.PD`, browse/filter its file list, and extract everything or only the selected files.
+- **Pack** tab: pick a folder and an output `.PD`. In `Auto` mode the archive mode is taken from `_pdinfo.json`.
+- Progress bar with a **Cancel** button; cancelling never leaves a half-written `.PD` behind (an existing file is kept intact).
 
 ### Standalone executable
 

@@ -324,8 +324,8 @@ def find_images_folder(folder, cpk_path) -> Path:
     if not (folder / IMAGES_FILE).exists() and (folder / Path(cpk_path).stem / IMAGES_FILE).exists():
         folder = folder / Path(cpk_path).stem
     if not (folder / IMAGES_FILE).exists():
-        raise ValueError(f"No se encontró {IMAGES_FILE} en {folder}: extrae primero las imágenes "
-                         "con esta versión de la herramienta")
+        raise ValueError(f"{IMAGES_FILE} not found in {folder}: extract the images first "
+                         "with this version of the tool")
     return folder
 
 
@@ -451,7 +451,7 @@ def _to_wav(vgmstream: str, hca: Path) -> Optional[str]:
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
     r = subprocess.run([vgmstream, '-o', str(wav), str(hca)], capture_output=True, creationflags=flags)
     if r.returncode != 0 or not wav.exists():
-        return f"{hca.parent.name}/{hca.name}: vgmstream-cli falló ({r.returncode})"
+        return f"{hca.parent.name}/{hca.name}: vgmstream-cli failed ({r.returncode})"
     return None
 
 
@@ -463,7 +463,7 @@ def extract_audio(src, out_root, wav: bool = True, workers: Optional[int] = None
     """
     cpks = find_cpks(src, audio=True)
     if not cpks:
-        raise ValueError("No hay archivos de audio (bgm.cpk, se.cpk, vo.cpk)")
+        raise ValueError("There are no audio files (bgm.cpk, se.cpk, vo.cpk)")
     result = AudioResult()
     written = []
     total = 0

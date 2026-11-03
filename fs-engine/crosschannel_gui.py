@@ -61,8 +61,8 @@ class App(ctk.CTk):
 
         self.tabs = ctk.CTkTabview(self)
         self.tabs.grid(row=0, column=0, sticky="nsew", padx=12, pady=(6, 0))
-        self._build_extract_tab(self.tabs.add("Extraer"))
-        self._build_pack_tab(self.tabs.add("Empaquetar"))
+        self._build_extract_tab(self.tabs.add("Extract"))
+        self._build_pack_tab(self.tabs.add("Pack"))
         self._build_status_bar()
 
     def _build_extract_tab(self, tab):
@@ -70,22 +70,22 @@ class App(ctk.CTk):
         tab.grid_rowconfigure(3, weight=1)
 
         self.pd_var = tk.StringVar()
-        ctk.CTkLabel(tab, text="Archivo .PD:").grid(row=0, column=0, sticky="w", padx=(4, 8), pady=4)
+        ctk.CTkLabel(tab, text=".PD file:").grid(row=0, column=0, sticky="w", padx=(4, 8), pady=4)
         pd_entry = ctk.CTkEntry(tab, textvariable=self.pd_var)
         pd_entry.grid(row=0, column=1, sticky="ew", pady=4)
         pd_entry.bind("<Return>", lambda _e: self.load_pd(self.pd_var.get()))
-        btn = ctk.CTkButton(tab, text="Abrir…", width=100, command=self.browse_pd)
+        btn = ctk.CTkButton(tab, text="Open…", width=100, command=self.browse_pd)
         btn.grid(row=0, column=2, padx=(8, 4), pady=4)
         self.busy_widgets.append(btn)
 
-        self.pd_info = ctk.CTkLabel(tab, text="Ningún archivo abierto", anchor="w",
+        self.pd_info = ctk.CTkLabel(tab, text="No file open", anchor="w",
                                     text_color=("gray35", "gray65"))
         self.pd_info.grid(row=1, column=0, columnspan=3, sticky="ew", padx=4)
 
         self.filter_var = tk.StringVar()
         self.filter_var.trace_add("write", lambda *_: self._refresh_tree())
-        ctk.CTkLabel(tab, text="Filtrar:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=4)
-        ctk.CTkEntry(tab, textvariable=self.filter_var, placeholder_text="nombre contiene…") \
+        ctk.CTkLabel(tab, text="Filter:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=4)
+        ctk.CTkEntry(tab, textvariable=self.filter_var, placeholder_text="name contains…") \
             .grid(row=2, column=1, columnspan=2, sticky="ew", padx=(0, 4), pady=4)
 
         tree_frame = ctk.CTkFrame(tab, fg_color="transparent")
@@ -95,8 +95,8 @@ class App(ctk.CTk):
 
         self.tree = ttk.Treeview(tree_frame, columns=("size",), selectmode="extended",
                                  style="PD.Treeview")
-        self.tree.heading("#0", text="Nombre", anchor="w")
-        self.tree.heading("size", text="Tamaño", anchor="e")
+        self.tree.heading("#0", text="Name", anchor="w")
+        self.tree.heading("size", text="Size", anchor="e")
         self.tree.column("#0", stretch=True, width=500)
         self.tree.column("size", stretch=False, width=110, anchor="e")
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -106,9 +106,9 @@ class App(ctk.CTk):
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self._update_selection_label())
 
         self.out_var = tk.StringVar()
-        ctk.CTkLabel(tab, text="Destino:").grid(row=4, column=0, sticky="w", padx=(4, 8), pady=4)
+        ctk.CTkLabel(tab, text="Output:").grid(row=4, column=0, sticky="w", padx=(4, 8), pady=4)
         ctk.CTkEntry(tab, textvariable=self.out_var).grid(row=4, column=1, sticky="ew", pady=4)
-        btn = ctk.CTkButton(tab, text="Elegir…", width=100, command=self.browse_out_dir)
+        btn = ctk.CTkButton(tab, text="Browse…", width=100, command=self.browse_out_dir)
         btn.grid(row=4, column=2, padx=(8, 4), pady=4)
         self.busy_widgets.append(btn)
 
@@ -116,9 +116,9 @@ class App(ctk.CTk):
         actions.grid(row=5, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
         self.sel_label = ctk.CTkLabel(actions, text="", text_color=("gray35", "gray65"))
         self.sel_label.pack(side="left")
-        btn_all = ctk.CTkButton(actions, text="Extraer todo", command=lambda: self.start_extract(False))
+        btn_all = ctk.CTkButton(actions, text="Extract all", command=lambda: self.start_extract(False))
         btn_all.pack(side="right")
-        btn_sel = ctk.CTkButton(actions, text="Extraer seleccionados",
+        btn_sel = ctk.CTkButton(actions, text="Extract selected",
                                 command=lambda: self.start_extract(True))
         btn_sel.pack(side="right", padx=8)
         self.busy_widgets += [btn_all, btn_sel]
@@ -127,12 +127,12 @@ class App(ctk.CTk):
         tab.grid_columnconfigure(1, weight=1)
 
         self.in_var = tk.StringVar()
-        ctk.CTkLabel(tab, text="Carpeta de entrada:").grid(row=0, column=0, sticky="w", padx=(4, 8), pady=6)
+        ctk.CTkLabel(tab, text="Input folder:").grid(row=0, column=0, sticky="w", padx=(4, 8), pady=6)
         in_entry = ctk.CTkEntry(tab, textvariable=self.in_var)
         in_entry.grid(row=0, column=1, sticky="ew", pady=6)
         in_entry.bind("<Return>", lambda _e: self._update_pack_info())
         in_entry.bind("<FocusOut>", lambda _e: self._update_pack_info())
-        btn = ctk.CTkButton(tab, text="Elegir…", width=100, command=self.browse_in_dir)
+        btn = ctk.CTkButton(tab, text="Browse…", width=100, command=self.browse_in_dir)
         btn.grid(row=0, column=2, padx=(8, 4), pady=6)
         self.busy_widgets.append(btn)
 
@@ -140,13 +140,13 @@ class App(ctk.CTk):
         self.in_info.grid(row=1, column=1, columnspan=2, sticky="ew")
 
         self.pack_out_var = tk.StringVar()
-        ctk.CTkLabel(tab, text="Archivo .PD de salida:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=6)
+        ctk.CTkLabel(tab, text="Output .PD file:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=6)
         ctk.CTkEntry(tab, textvariable=self.pack_out_var).grid(row=2, column=1, sticky="ew", pady=6)
-        btn = ctk.CTkButton(tab, text="Guardar como…", width=100, command=self.browse_pack_out)
+        btn = ctk.CTkButton(tab, text="Save as…", width=100, command=self.browse_pack_out)
         btn.grid(row=2, column=2, padx=(8, 4), pady=6)
         self.busy_widgets.append(btn)
 
-        ctk.CTkLabel(tab, text="Modo:").grid(row=3, column=0, sticky="w", padx=(4, 8), pady=6)
+        ctk.CTkLabel(tab, text="Mode:").grid(row=3, column=0, sticky="w", padx=(4, 8), pady=6)
         self.mode_var = tk.StringVar(value=MODE_AUTO)
         mode_btn = ctk.CTkSegmentedButton(tab, values=[MODE_AUTO, "PackOnly", "PackPlus"],
                                           variable=self.mode_var,
@@ -157,12 +157,12 @@ class App(ctk.CTk):
         self.mode_info = ctk.CTkLabel(tab, text="", anchor="w", text_color=("gray35", "gray65"))
         self.mode_info.grid(row=4, column=1, columnspan=2, sticky="ew")
 
-        ctk.CTkLabel(tab, text="PackPlus: datos invertidos con XOR 0xFF (lo usan la mayoría de "
-                               "archivos del juego).\nPackOnly: datos sin cifrar.",
+        ctk.CTkLabel(tab, text="PackPlus: data inverted with XOR 0xFF (used by most of the "
+                               "game files).\nPackOnly: unencrypted data.",
                      justify="left", anchor="w", text_color=("gray35", "gray65")) \
             .grid(row=5, column=1, columnspan=2, sticky="ew", pady=(12, 0))
 
-        btn = ctk.CTkButton(tab, text="Empaquetar", width=160, command=self.start_pack)
+        btn = ctk.CTkButton(tab, text="Pack", width=160, command=self.start_pack)
         btn.grid(row=6, column=1, columnspan=2, sticky="e", padx=4, pady=(24, 0))
         self.busy_widgets.append(btn)
 
@@ -177,22 +177,22 @@ class App(ctk.CTk):
         self.progress.set(0)
         self.progress.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 4))
 
-        self.status = ctk.CTkLabel(bar, text="Listo", anchor="w")
+        self.status = ctk.CTkLabel(bar, text="Ready", anchor="w")
         self.status.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 8))
 
-        self.cancel_btn = ctk.CTkButton(bar, text="Cancelar", width=90, state="disabled",
+        self.cancel_btn = ctk.CTkButton(bar, text="Cancel", width=90, state="disabled",
                                         fg_color="#b23b3b", hover_color="#8f2f2f",
                                         command=self.cancel_task)
         self.cancel_btn.grid(row=0, column=2, rowspan=2, padx=(0, 10))
 
-        theme = ctk.CTkOptionMenu(bar, values=["Sistema", "Claro", "Oscuro"], width=100,
+        theme = ctk.CTkOptionMenu(bar, values=["System", "Light", "Dark"], width=100,
                                   command=self._change_theme)
         theme.grid(row=0, column=3, rowspan=2, padx=(0, 10))
 
     # --------------------------------------------------------------- Tema
 
     def _change_theme(self, value):
-        ctk.set_appearance_mode({"Sistema": "system", "Claro": "light", "Oscuro": "dark"}[value])
+        ctk.set_appearance_mode({"System": "system", "Light": "light", "Dark": "dark"}[value])
         self.after(10, self._apply_tree_style)
 
     def _apply_tree_style(self):
@@ -211,8 +211,8 @@ class App(ctk.CTk):
     # ------------------------------------------------------- Pestaña Extraer
 
     def browse_pd(self):
-        path = filedialog.askopenfilename(title="Abrir archivo .PD",
-                                          filetypes=[("Archivos PD", "*.pd"), ("Todos", "*.*")])
+        path = filedialog.askopenfilename(title="Open .PD file",
+                                          filetypes=[("PD files", "*.pd"), ("All", "*.*")])
         if path:
             self.load_pd(path)
 
@@ -223,7 +223,7 @@ class App(ctk.CTk):
         try:
             mode, entries, warnings = pd_core.read_index(path)
         except Exception as e:
-            messagebox.showerror(APP_TITLE, f"No se pudo leer el archivo:\n{e}")
+            messagebox.showerror(APP_TITLE, f"Could not read the file:\n{e}")
             return
         self.pd_var.set(path)
         self.entries = entries
@@ -232,7 +232,7 @@ class App(ctk.CTk):
         self.out_var.set(str(p.parent / p.stem))
 
         total = sum(e.size for e in entries)
-        info = f"Modo: {mode}   ·   {len(entries)} archivos   ·   {format_size(total)}"
+        info = f"Mode: {mode}   ·   {len(entries)} files   ·   {format_size(total)}"
         if warnings:
             info += "   ·   " + "; ".join(warnings)
         self.pd_info.configure(text=info)
@@ -252,10 +252,10 @@ class App(ctk.CTk):
             return
         shown = len(self.tree.get_children())
         selected = len(self.tree.selection())
-        self.sel_label.configure(text=f"{shown} mostrados · {selected} seleccionados")
+        self.sel_label.configure(text=f"{shown} shown · {selected} selected")
 
     def browse_out_dir(self):
-        path = filedialog.askdirectory(title="Carpeta de destino")
+        path = filedialog.askdirectory(title="Output folder")
         if path:
             self.out_var.set(path)
 
@@ -263,31 +263,31 @@ class App(ctk.CTk):
         pd_file = self.pd_var.get().strip()
         out_dir = self.out_var.get().strip()
         if not self.entries:
-            messagebox.showwarning(APP_TITLE, "Primero abre un archivo .PD.")
+            messagebox.showwarning(APP_TITLE, "Open a .PD file first.")
             return
         if not out_dir:
-            messagebox.showwarning(APP_TITLE, "Elige una carpeta de destino.")
+            messagebox.showwarning(APP_TITLE, "Choose an output folder.")
             return
         names = None
         if only_selected:
             names = [self.entries[int(iid)].name for iid in self.tree.selection()]
             if not names:
-                messagebox.showwarning(APP_TITLE, "No hay archivos seleccionados.")
+                messagebox.showwarning(APP_TITLE, "No files selected.")
                 return
 
         def done(result):
             mode, count = result
-            if messagebox.askyesno(APP_TITLE, f"Se extrajeron {count} archivos en:\n{out_dir}\n\n"
-                                              "¿Abrir la carpeta?"):
+            if messagebox.askyesno(APP_TITLE, f"Extracted {count} files to:\n{out_dir}\n\n"
+                                              "Open the folder?"):
                 open_folder(out_dir)
 
         self.run_task(pd_core.extract, (pd_file, out_dir),
-                      {"names": names}, "Extrayendo", done)
+                      {"names": names}, "Extracting", done)
 
     # ---------------------------------------------------- Pestaña Empaquetar
 
     def browse_in_dir(self):
-        path = filedialog.askdirectory(title="Carpeta con los archivos a empaquetar")
+        path = filedialog.askdirectory(title="Folder with the files to pack")
         if path:
             self.in_var.set(path)
             if not self.pack_out_var.get():
@@ -296,11 +296,11 @@ class App(ctk.CTk):
             self._update_pack_info()
 
     def browse_pack_out(self):
-        initial = Path(self.pack_out_var.get() or "nuevo.pd")
-        path = filedialog.asksaveasfilename(title="Guardar archivo .PD", defaultextension=".pd",
+        initial = Path(self.pack_out_var.get() or "new.pd")
+        path = filedialog.asksaveasfilename(title="Save .PD file", defaultextension=".pd",
                                             initialdir=str(initial.parent) if initial.parent.exists() else None,
                                             initialfile=initial.name,
-                                            filetypes=[("Archivos PD", "*.pd"), ("Todos", "*.*")])
+                                            filetypes=[("PD files", "*.pd"), ("All", "*.*")])
         if path:
             self.pack_out_var.set(path)
 
@@ -309,9 +309,9 @@ class App(ctk.CTk):
         if in_dir and Path(in_dir).is_dir():
             count = len(pd_core.collect_files(in_dir))
             has_info = pd_core.read_info(in_dir) is not None
-            text = f"{count} archivos"
-            text += f"  ·  {pd_core.INFO_FILE} encontrado (se conserva el orden original)" if has_info \
-                else f"  ·  sin {pd_core.INFO_FILE} (orden alfabético)"
+            text = f"{count} files"
+            text += f"  ·  {pd_core.INFO_FILE} found (the original order is kept)" if has_info \
+                else f"  ·  no {pd_core.INFO_FILE} (alphabetical order)"
             self.in_info.configure(text=text)
         else:
             self.in_info.configure(text="")
@@ -319,10 +319,10 @@ class App(ctk.CTk):
         if self.mode_var.get() == MODE_AUTO:
             if in_dir and Path(in_dir).is_dir():
                 mode, source = pd_core.resolve_mode(in_dir)
-                self.mode_info.configure(text=f"Auto → se usará {mode} ({source})")
+                self.mode_info.configure(text=f"Auto → {mode} will be used ({source})")
             else:
-                self.mode_info.configure(text=f"Auto → modo de {pd_core.INFO_FILE} o "
-                                              f"{pd_core.DEFAULT_MODE} por defecto")
+                self.mode_info.configure(text=f"Auto → mode from {pd_core.INFO_FILE}, or "
+                                              f"{pd_core.DEFAULT_MODE} by default")
         else:
             self.mode_info.configure(text="")
 
@@ -330,29 +330,29 @@ class App(ctk.CTk):
         in_dir = self.in_var.get().strip()
         out_file = self.pack_out_var.get().strip()
         if not in_dir or not Path(in_dir).is_dir():
-            messagebox.showwarning(APP_TITLE, "Elige una carpeta de entrada válida.")
+            messagebox.showwarning(APP_TITLE, "Choose a valid input folder.")
             return
         if not out_file:
-            messagebox.showwarning(APP_TITLE, "Elige el archivo .PD de salida.")
+            messagebox.showwarning(APP_TITLE, "Choose the output .PD file.")
             return
         in_path, out_path = Path(in_dir).resolve(), Path(out_file).resolve()
         if in_path in out_path.parents:
-            messagebox.showwarning(APP_TITLE, "El archivo de salida no puede estar dentro "
-                                              "de la carpeta de entrada.")
+            messagebox.showwarning(APP_TITLE, "The output file cannot be inside "
+                                              "the input folder.")
             return
         if out_path.exists() and not messagebox.askyesno(
-                APP_TITLE, f"{out_path.name} ya existe.\n¿Sobrescribirlo?"):
+                APP_TITLE, f"{out_path.name} already exists.\nOverwrite it?"):
             return
 
         mode = None if self.mode_var.get() == MODE_AUTO else self.mode_var.get()
 
         def done(result):
             mode_used, count = result
-            if messagebox.askyesno(APP_TITLE, f"Paquete creado ({mode_used}, {count} archivos):\n"
-                                              f"{out_path}\n\n¿Abrir la carpeta?"):
+            if messagebox.askyesno(APP_TITLE, f"Archive created ({mode_used}, {count} files):\n"
+                                              f"{out_path}\n\nOpen the folder?"):
                 open_folder(out_path.parent)
 
-        self.run_task(pd_core.pack, (in_dir, out_file), {"mode": mode}, "Empaquetando", done)
+        self.run_task(pd_core.pack, (in_dir, out_file), {"mode": mode}, "Packing", done)
 
     # ------------------------------------------------------------ Tareas
 
@@ -392,11 +392,11 @@ class App(ctk.CTk):
                     if name:
                         self.status.configure(text=f"{self._task_label} [{i + 1}/{total}]  {name}")
                 elif kind == "done":
-                    self._finish("Completado")
+                    self._finish("Done")
                     self.progress.set(1)
                     self._task_done(data)
                 elif kind == "cancelled":
-                    self._finish("Cancelado")
+                    self._finish("Cancelled")
                 elif kind == "error":
                     self._finish("Error")
                     messagebox.showerror(APP_TITLE, str(data))
@@ -411,7 +411,7 @@ class App(ctk.CTk):
 
     def cancel_task(self):
         self.cancel_event.set()
-        self.status.configure(text="Cancelando…")
+        self.status.configure(text="Cancelling…")
 
     def _set_busy(self, busy):
         state = "disabled" if busy else "normal"

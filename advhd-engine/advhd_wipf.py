@@ -81,7 +81,7 @@ def lzss(src: bytes, out_len: int) -> bytes:
                     wpos = (wpos + 1) & 0xFFF
             flags >>= 1
     if op < out_len:
-        raise ValueError(f"Datos comprimidos incompletos ({op} de {out_len} bytes)")
+        raise ValueError(f"Incomplete compressed data ({op} of {out_len} bytes)")
     return bytes(out)
 
 
@@ -156,7 +156,7 @@ def write_wipf(frames: List[Frame]) -> bytes:
     body = bytearray()
     for fr in frames:
         if fr.bpp != bpp or len(fr.data) != fr.width * fr.height * (bpp // 8):
-            raise ValueError("Fotograma con datos de tamaño incorrecto")
+            raise ValueError("Frame data has the wrong size")
         packed = lzss_compress(fr.data)
         head += struct.pack('<6I', fr.width, fr.height, fr.x, fr.y, fr.unknown, len(packed))
         if bpp == 8:
@@ -187,10 +187,10 @@ def gray_to_indices(img: Image.Image, palette: bytes) -> bytes:
 
 def read_wipf(data: bytes) -> List[Frame]:
     if not is_wipf(data):
-        raise ValueError("No es una imagen WIPF")
+        raise ValueError("Not a WIPF image")
     n, bpp = struct.unpack_from('<HH', data, 4)
     if bpp not in (8, 24):
-        raise ValueError(f"Profundidad no soportada: {bpp} bits")
+        raise ValueError(f"Unsupported bit depth: {bpp} bits")
     heads = [struct.unpack_from('<6I', data, 8 + FRAME_HEADER * k) for k in range(n)]
     p = 8 + FRAME_HEADER * n
     frames = []

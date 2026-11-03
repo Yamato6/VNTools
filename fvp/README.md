@@ -41,9 +41,9 @@ pip install -r requirements.txt
 python fvp_gui.py
 ```
 
-- **Archivos BIN**: open a `.bin`, filter its file list, preview images, extract everything or the selected files, and repack a folder.
-- **Imágenes NVSG**: convert a folder of NVSG images to PNG (creates `decode_log.txt`) and back, with preview.
-- **Scripts HCB**: extract strings (optionally decompile), rebuild with your translation and see a report of the lines that grew, were cut or had characters replaced.
+- **BIN Files**: open a `.bin`, filter its file list, preview images, extract everything or the selected files, and repack a folder.
+- **NVSG Images**: convert a folder of NVSG images to PNG (creates `decode_log.txt`) and back, with preview.
+- **HCB Scripts**: extract strings (optionally decompile), rebuild with your translation and see a report of the lines that grew, were cut or had characters replaced.
 
 ### Standalone executable
 

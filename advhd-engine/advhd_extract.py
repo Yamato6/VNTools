@@ -168,8 +168,8 @@ def _process_name(arc_path: str, name: str, entries: List[ArcEntry], out_dir: st
             if compose and ('PNG' in parts or 'WIP' in parts) \
                     and all(m.getextrema() == (0, 0) for m in masks):
                 # Aplicarla borraría la imagen entera (CHATWND)
-                w.warnings.append(f"{label}: la máscara es totalmente transparente; "
-                                  "la imagen se guarda opaca y la máscara aparte")
+                w.warnings.append(f"{label}: the mask is fully transparent; "
+                                  "the image is saved opaque and the mask separately")
                 compose = False
 
         def save_masks():
@@ -186,8 +186,8 @@ def _process_name(arc_path: str, name: str, entries: List[ArcEntry], out_dir: st
                     w.png(f"{name}.png", img)
                     composed = True
                 else:
-                    w.warnings.append(f"{label}: la máscara mide {masks[0].size} y la imagen "
-                                      f"{img.size}; se guardan por separado")
+                    w.warnings.append(f"{label}: the mask is {masks[0].size} and the image "
+                                      f"{img.size}; they are saved separately")
                     w.png_bytes(f"{name}.png", data)
                     save_masks()
             else:
@@ -206,8 +206,8 @@ def _process_name(arc_path: str, name: str, entries: List[ArcEntry], out_dir: st
                 composed = True
             else:
                 if masks and compose:
-                    w.warnings.append(f"{label}: los fotogramas de la máscara no coinciden con "
-                                      "los de la imagen; se guardan por separado")
+                    w.warnings.append(f"{label}: the mask frames do not match "
+                                      "the image frames; they are saved separately")
                 for fname, img in zip(names, frames):
                     w.png(fname, img)
                 if masks:
@@ -368,12 +368,12 @@ def _rebuild_wipf(original: bytes, images: List[Image.Image], allow_resize: bool
     """
     frames = read_wipf(original)
     if len(images) != len(frames):
-        raise ValueError(f"se esperaban {len(frames)} fotogramas y hay {len(images)}")
+        raise ValueError(f"expected {len(frames)} frames, found {len(images)}")
     new_frames = []
     for k, (fr, img) in enumerate(zip(frames, images)):
         if img.size != (fr.width, fr.height) and not allow_resize:
-            raise ValueError(f"el fotograma {k} mide {img.size} y el original "
-                             f"{(fr.width, fr.height)} (usa --allow-resize si es intencionado)")
+            raise ValueError(f"frame {k} is {img.size} and the original is "
+                             f"{(fr.width, fr.height)} (use --allow-resize if this is intended)")
         data = image_to_planes(img) if fr.bpp == 24 else gray_to_indices(img, fr.palette)
         new_frames.append(Frame(img.width, img.height, fr.x, fr.y, fr.unknown, fr.bpp,
                                 fr.palette, data))
@@ -386,8 +386,8 @@ def _rebuild_wipf(original: bytes, images: List[Image.Image], allow_resize: bool
 def _rebuild_png(original: bytes, img: Image.Image, allow_resize: bool) -> bytes:
     old = Image.open(io.BytesIO(original))
     if img.size != old.size and not allow_resize:
-        raise ValueError(f"mide {img.size} y el original {old.size} "
-                         "(usa --allow-resize si es intencionado)")
+        raise ValueError(f"it is {img.size} and the original is {old.size} "
+                         "(use --allow-resize if this is intended)")
     rgb = img.convert('RGB')
     if rgb.size == old.size and rgb.tobytes() == old.convert('RGB').tobytes():
         return original
@@ -445,8 +445,8 @@ def find_images_folder(folder, arc_path) -> Path:
     if not (folder / IMAGES_FILE).exists() and (folder / Path(arc_path).stem / IMAGES_FILE).exists():
         folder = folder / Path(arc_path).stem
     if not (folder / IMAGES_FILE).exists():
-        raise ValueError(f"No se encontró {IMAGES_FILE} en {folder}: extrae primero las imágenes "
-                         "con esta versión de la herramienta")
+        raise ValueError(f"{IMAGES_FILE} not found in {folder}: extract the images first "
+                         "with this version of the tool")
     return folder
 
 
@@ -502,7 +502,7 @@ def extract_audio(src, out_root, progress=None, cancel=None) -> int:
     arcs = [src] if src.is_file() else sorted(
         p for p in src.iterdir() if p.suffix.lower() == '.arc' and p.stem.lower() in AUDIO_ARCS)
     if not arcs:
-        raise ValueError("No hay archivos de audio (Bgm.arc, Se.arc, Voice.arc)")
+        raise ValueError("There are no audio files (Bgm.arc, Se.arc, Voice.arc)")
     total = 0
     for arc in arcs:
         total += extract_raw(arc, Path(out_root) / arc.stem, progress=progress, cancel=cancel)
