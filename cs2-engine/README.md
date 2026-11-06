@@ -61,13 +61,11 @@ python cs2_gui.py
 
 The passphrase at the top of the window is filled in when you choose a game folder or a `.int`. The key it gives is shown next to it.
 
-- **Extract**: pick the game folder (or a single `.int`) and an output folder, choose the categories and extract. A live preview shows the images as they are converted.
-- **Repack**: pick the original `.int`, the extracted folder and the output `.int`.
-- **Text**: extract the text of `scene.int`, then rebuild it with your translation. A report lists the lines that could not be encoded.
 - **INT Files**: open a `.int` and filter its files by name or type.
-  - **Preview**: selecting an image shows it with its size, position and canvas. ◀ ▶ (or the arrow keys) step through the frames, and "On canvas" shows each frame where the game draws it.
-  - **Extract**: save all the files or only the selected ones, with HG-3 images as PNG or unchanged.
-  - **Pack folder…**: packs a folder into a `.int`.
+  - **Preview**: selecting a file shows its images over a checkerboard (to see transparency), with their size and the name of the PNG they are extracted as. ◀ ▶ (or the arrow keys) step through the frames of an HG-3 image (with their position and canvas).
+  - **Extract selected** / **Extract all**: save the selected files or the whole archive into `<output>/<archive>/`, with the HG-3 images as PNG and the rest decrypted. **Extract game…** does the same for every archive of a game folder. With **Resume**, an interrupted extraction continues where it stopped; files are processed in parallel by the chosen number of workers.
+  - **Pack**: builds a complete `.int`, encrypted like the open one. A folder from the extraction only re-encodes the edited files; any other folder is packed as it is.
+- **Scripts**: extract the text of `scene.int`, then rebuild it with your translation. A report lists the lines that could not be encoded.
 
 The default output folders are next to the game folder, never inside it: the tools only read the game files.
 

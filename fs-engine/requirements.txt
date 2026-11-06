@@ -1,3 +1,4 @@
+pillow>=9.0
 customtkinter>=5.2
 # Solo para generar el .exe:
 pyinstaller>=6.0

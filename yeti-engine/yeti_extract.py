@@ -233,17 +233,21 @@ def _write_images_info(folder: Path, info: Dict[str, dict]):
 
 def extract_images(src, out_root, resume: bool = False,
                    workers: Optional[int] = None, png_level: int = DEFAULT_PNG_LEVEL,
-                   progress=None, cancel=None) -> ImagesResult:
+                   ids: Optional[Iterable[int]] = None, progress=None, cancel=None) -> ImagesResult:
     """
     Guarda todas las texturas de los .cpk como PNG en <out_root>/<cpk>/<id>_<entrada>.png
     y el resto de hojas como .bin. Cada ID terminado se apunta en <cpk>/_progreso.txt;
     con resume=True se saltan los ya hechos.
+
+    ids: solo esos archivos; se suman a una extracción anterior sin borrar su registro.
 
     progress recibe como nombre la ruta del último PNG escrito (o '<cpk>/<id>').
     """
     out_root = Path(out_root)
     workers = max(1, workers or default_workers())
     result = ImagesResult()
+    wanted = set(ids) if ids is not None else None
+    merge = resume or wanted is not None
 
     # Trabajo pendiente de todos los .cpk
     jobs = []           # (cpk_path, entry, out_dir)
@@ -253,13 +257,15 @@ def extract_images(src, out_root, resume: bool = False,
         out_dir = out_root / cpk_path.stem
         out_dir.mkdir(parents=True, exist_ok=True)
         prog = out_dir / PROGRESS_FILE
-        done = _read_done(prog) if resume else set()
-        if not resume:
+        done = _read_done(prog) if resume and wanted is None else set()
+        if not merge:
             prog.write_text('', encoding='utf-8')
         progress_files[str(cpk_path)] = prog
-        images_info[str(cpk_path)] = read_images_info(out_dir) if resume else {}
+        images_info[str(cpk_path)] = read_images_info(out_dir) if merge else {}
         with CPK(cpk_path) as cpk:
             for e in cpk.entries:
+                if wanted is not None and e.id not in wanted:
+                    continue
                 if e.id in done:
                     result.skipped += 1
                 else:
@@ -583,3 +589,19 @@ def extract_audio(src, out_root, wav: bool = True, workers: Optional[int] = None
                     result.wav += 1
     report(progress, total, total)
     return result
+
+
+def extract_game(src, out_root, resume: bool = False, workers: Optional[int] = None,
+                 progress=None, cancel=None) -> Tuple[ImagesResult, Optional[AudioResult]]:
+    """
+    Todo el juego (src: la carpeta data del juego): las imágenes de los .cpk de imágenes y el audio
+    de bgm, se y vo.cpk (también como WAV si vgmstream-cli está disponible).
+    """
+    images = ImagesResult()
+    if find_cpks(src):
+        images = extract_images(src, out_root, resume=resume, workers=workers,
+                                progress=progress, cancel=cancel)
+    audio = None
+    if find_cpks(src, audio=True):
+        audio = extract_audio(src, out_root, wav=True, workers=workers, progress=progress, cancel=cancel)
+    return images, audio

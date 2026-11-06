@@ -24,7 +24,7 @@ A Python tool for extracting and repacking `.PD` archive files used by the **FS 
 
 - Python 3.8 or higher
 - Command line: no external dependencies
-- GUI: `customtkinter` (`pip install -r requirements.txt`)
+- GUI: `customtkinter` and Pillow (`pip install -r requirements.txt`)
 
 ## Graphical Interface
 
@@ -32,8 +32,9 @@ A Python tool for extracting and repacking `.PD` archive files used by the **FS 
 python crosschannel_gui.py
 ```
 
-- **Extract** tab: open a `.PD`, browse/filter its file list, and extract everything or only the selected files.
-- **Pack** tab: pick a folder and an output `.PD`. In `Auto` mode the archive mode is taken from `_pdinfo.json`.
+- **PD Files**: open a `.PD` and filter its file list. Selecting an image shows a preview.
+  - **Extract selected** / **Extract all**: save the selected files or the whole archive.
+  - **Pack**: pick a folder and an output `.PD`. In `Auto` mode the archive mode is taken from `_pdinfo.json`.
 - Progress bar with a **Cancel** button; cancelling never leaves a half-written `.PD` behind (an existing file is kept intact).
 
 ### Standalone executable

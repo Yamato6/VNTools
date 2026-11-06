@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-NeXAS Tools GUI - Interfaz gráfica para los archivos .pac del motor NeXAS (Giga)
+NeXAS Tools GUI - Archivos .pac, imágenes y textos del motor NeXAS (Giga)
 Juego: Maji de Watashi ni Koi Shinasai! S (Minato Soft, 2012)
 """
 
+import io
 import os
 import queue
 import threading
@@ -20,14 +21,22 @@ import nexas_extract
 import nexas_pac
 import nexas_script
 from nexas_common import Cancelled
+from nexas_formats import compose_spm, fil_to_image, nmv_frame_image, read_nmv, read_spm
 
 APP_TITLE = "NeXAS Tools"
-PREVIEW_SIZE = (360, 270)
-PREVIEW_INTERVAL = 0.5      # segundos entre actualizaciones de la vista previa
+PREVIEW_SIZE = (300, 260)
+PREVIEW_INTERVAL = 0.5      # segundos entre actualizaciones de la vista previa al extraer
+PREVIEW_MAX_SIZE = 64 << 20
+MAX_REPORT_ROWS = 5000
 ALL_TYPES = "All"
 PAC_TYPES = [("PAC files", "*.pac"), ("All", "*.*")]
-CATEGORY_LABELS = [("images", "Images"), ("audio", "Audio"), ("video", "Video"),
-                   ("scripts", "Scripts"), ("data", "Data tables")]
+IMAGE_EXTS = {"png", "bmp", "jpg", "jpeg"}
+
+REPORT_FILTERS = {
+    "All": lambda e: True,
+    "Unsupported characters": lambda e: nexas_script.ST_UNSUPPORTED in e.flags,
+    "Replaced characters": lambda e: nexas_script.ST_REPLACED in e.flags,
+}
 
 
 def format_size(size: int) -> str:
@@ -44,23 +53,8 @@ def open_folder(path):
         pass
 
 
-def checkerboard(size, cell=8) -> Image.Image:
-    """Fondo de cuadros para ver la transparencia."""
-    w, h = size
-    img = Image.new('RGBA', size, (204, 204, 204, 255))
-    dark = Image.new('RGBA', (cell, cell), (153, 153, 153, 255))
-    for y in range(0, h, cell):
-        for x in range((y // cell) % 2 * cell, w, cell * 2):
-            img.paste(dark, (x, y))
-    return img
-
-
-def preview_image(img: Image.Image) -> ctk.CTkImage:
-    img = img.convert('RGBA')
-    img.thumbnail(PREVIEW_SIZE)
-    bg = checkerboard(img.size)
-    bg.alpha_composite(img)
-    return ctk.CTkImage(light_image=bg, dark_image=bg, size=bg.size)
+def muted(widget_cls, master, **kw):
+    return widget_cls(master, text_color=("gray35", "gray65"), **kw)
 
 
 def clear_image(label: ctk.CTkLabel, text: str = ""):
@@ -73,259 +67,658 @@ def clear_image(label: ctk.CTkLabel, text: str = ""):
     label.configure(image=None, text=text)
 
 
+def checkerboard(size, cell=8) -> Image.Image:
+    """Fondo de cuadros para ver la transparencia."""
+    w, h = size
+    img = Image.new('RGBA', size, (204, 204, 204, 255))
+    dark = Image.new('RGBA', (cell, cell), (153, 153, 153, 255))
+    for y in range(0, h, cell):
+        for x in range((y // cell) % 2 * cell, w, cell * 2):
+            img.paste(dark, (x, y))
+    return img
+
+
+class PathRow:
+    """Fila etiqueta + campo + botón de examinar."""
+
+    def __init__(self, master, row, label, browse, button="Browse…", width=100):
+        self.var = tk.StringVar()
+        ctk.CTkLabel(master, text=label).grid(row=row, column=0, sticky="w", padx=(4, 8), pady=3)
+        self.entry = ctk.CTkEntry(master, textvariable=self.var)
+        self.entry.grid(row=row, column=1, sticky="ew", pady=3)
+        self.button = ctk.CTkButton(master, text=button, width=width, command=browse)
+        self.button.grid(row=row, column=2, padx=(8, 4), pady=3)
+
+    def get(self):
+        return self.var.get().strip().strip('"')
+
+    def set(self, value):
+        self.var.set(str(value))
+
+
+class Preview:
+    """Panel de vista previa: imagen sobre cuadros, ◀ ▶ entre varias imágenes e información."""
+
+    def __init__(self, master):
+        self.frame = ctk.CTkFrame(master, width=PREVIEW_SIZE[0] + 20)
+        self.frame.grid_propagate(False)
+        self.frame.grid_columnconfigure(0, weight=1)
+        self.frame.grid_rowconfigure(0, weight=1)
+        self.image = ctk.CTkLabel(self.frame, text="No preview")
+        self.image.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 4))
+        nav = ctk.CTkFrame(self.frame, fg_color="transparent")
+        nav.grid(row=1, column=0, sticky="ew", padx=10)
+        nav.grid_columnconfigure(1, weight=1)
+        self.prev = ctk.CTkButton(nav, text="◀", width=36, command=lambda: self.step(-1))
+        self.prev.grid(row=0, column=0)
+        self.count = ctk.CTkLabel(nav, text="")
+        self.count.grid(row=0, column=1)
+        self.next = ctk.CTkButton(nav, text="▶", width=36, command=lambda: self.step(1))
+        self.next.grid(row=0, column=2)
+        self.info = ctk.CTkLabel(self.frame, text="", justify="left", anchor="w",
+                                 wraplength=PREVIEW_SIZE[0])
+        self.info.grid(row=2, column=0, sticky="ew", padx=10, pady=(6, 10))
+        self.header = ""
+        self.items = []         # [(imagen o función que la devuelve, texto)]
+        self.index = 0
+        self._ref = None        # CTkImage mostrada (para que no se libere)
+        self._render()
+
+    def grid(self, **kw):
+        self.frame.grid(**kw)
+
+    def bind_keys(self, widget):
+        """← → cambian de imagen."""
+        widget.bind("<Left>", lambda _e: (self.step(-1), "break")[1])
+        widget.bind("<Right>", lambda _e: (self.step(1), "break")[1])
+
+    def show(self, header="", items=()):
+        self.header, self.items, self.index = header, list(items), 0
+        self._render()
+
+    def show_file(self, path):
+        try:
+            with Image.open(path) as img:
+                img.load()
+                self.show(Path(path).name, [(img.copy(), f"{img.width}×{img.height}")])
+        except OSError:
+            pass
+
+    def step(self, delta):
+        if len(self.items) > 1:
+            self.index = (self.index + delta) % len(self.items)
+            self._render()
+
+    def _render(self):
+        lines = [self.header] if self.header else []
+        img = None
+        if self.items:
+            source, text = self.items[self.index]
+            try:
+                img = source() if callable(source) else source
+                lines.append(text)
+            except Exception as ex:
+                lines.append(f"Could not show it:\n{ex}")
+        if img is None:
+            self._ref = None
+            clear_image(self.image, "No preview")
+        else:
+            thumb = img.convert('RGBA')
+            thumb.thumbnail(PREVIEW_SIZE)
+            bg = checkerboard(thumb.size)
+            bg.alpha_composite(thumb)
+            self._ref = ctk.CTkImage(light_image=bg, dark_image=bg, size=bg.size)
+            self.image.configure(image=self._ref, text="")
+        many = len(self.items) > 1
+        self.prev.configure(state="normal" if many else "disabled")
+        self.next.configure(state="normal" if many else "disabled")
+        self.count.configure(text=f"{self.index + 1} / {len(self.items)}" if many else "")
+        self.info.configure(text="\n".join(t for t in lines if t))
+
+
+def image_items(pac: nexas_pac.Pac, e: nexas_pac.PacEntry):
+    """Imágenes de una entrada: PNG/BMP/JPG, FIL, fotogramas de NMV o patrones de SPM."""
+    data = pac.read(e)
+    if e.ext in IMAGE_EXTS:
+        img = Image.open(io.BytesIO(data))
+        return [(img, f"{img.width}×{img.height} {img.mode}")]
+    if e.ext == 'fil':
+        img = fil_to_image(data)
+        return [(img, f"{img.width}×{img.height} mask\nSaved as {e.name.rsplit('.', 1)[0]}.fil.png")]
+    if e.ext == 'nmv':
+        nmv = read_nmv(data)
+        if nmv.version != 4:
+            return []
+        return [(lambda fr=fr: nmv_frame_image(nmv, fr), f"{nmv.width}×{nmv.height}, frame at {fr.time} ms")
+                for fr in nmv.frames]
+    if e.ext == 'spm':
+        spm = read_spm(data)
+        by_name = {x.name.lower(): x for x in pac.entries}
+        cache = {}
+
+        def load(name):
+            key = name.lower()
+            if key not in cache:
+                entry = by_name.get(key)
+                cache[key] = Image.open(io.BytesIO(pac.read(entry))) if entry else None
+            return cache[key]
+
+        return [(lambda k=k: compose_spm(spm, k, load), f"Pattern {k}: {pat.size[0]}×{pat.size[1]}")
+                for k, pat in enumerate(spm.patterns) if pat.size[0] > 0 and pat.size[1] > 0 and pat.parts]
+    return []
+
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("900x660")
-        self.minsize(720, 540)
+        self.geometry("1000x720")
+        self.minsize(820, 600)
 
         self.events = queue.Queue()
         self.cancel_event = threading.Event()
         self.worker = None
         self.busy_widgets = []
-
-        self.entries = []           # pestaña Archivos PAC: lista de nexas_pac.PacEntry
+        self._autos = {}            # último valor puesto automáticamente en cada campo
         self._last_preview = 0.0
 
-        self._build_ui()
+        self.entries = []           # pestaña PAC Files: lista de nexas_pac.PacEntry
+        self._pac = None            # el .pac abierto (para la vista previa)
+        self.report = None
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self.tabs = ctk.CTkTabview(self)
+        self.tabs.grid(row=0, column=0, sticky="nsew", padx=12, pady=(6, 0))
+        self._build_pac_tab(self.tabs.add("PAC Files"))
+        self._build_text_tab(self.tabs.add("Text"))
+        self._build_status_bar()
         self._apply_tree_style()
         self.after(50, self._poll_events)
 
-    # ------------------------------------------------------------------ UI
+    # ------------------------------------------------------------ helpers UI
 
-    def _build_ui(self):
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+    def _busy(self, *widgets):
+        self.busy_widgets.extend(widgets)
+        return widgets[0] if len(widgets) == 1 else widgets
 
-        self.tabs = ctk.CTkTabview(self)
-        self.tabs.grid(row=0, column=0, sticky="nsew", padx=12, pady=(6, 0))
-        self._build_extract_tab(self.tabs.add("Extract"))
-        self._build_repack_tab(self.tabs.add("Repack"))
-        self._build_text_tab(self.tabs.add("Text"))
-        self._build_pac_tab(self.tabs.add("PAC Files"))
-        self._build_status_bar()
+    def _make_tree(self, master, columns, headings, widths, anchors=None):
+        frame = ctk.CTkFrame(master, fg_color="transparent")
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_rowconfigure(0, weight=1)
+        tree = ttk.Treeview(frame, columns=columns[1:], selectmode="extended", style="NeXAS.Treeview")
+        for i, (col, head, width) in enumerate(zip(columns, headings, widths)):
+            key = "#0" if i == 0 else col
+            anchor = (anchors or {}).get(col, "w")
+            tree.heading(key, text=head, anchor=anchor)
+            tree.column(key, width=width, stretch=(i == 0 or width == 0), anchor=anchor)
+        tree.grid(row=0, column=0, sticky="nsew")
+        scroll = ctk.CTkScrollbar(frame, command=tree.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        tree.configure(yscrollcommand=scroll.set)
+        return frame, tree
 
-    def _path_row(self, tab, row, label, var, command, button="Browse…"):
-        """Fila etiqueta + campo + botón."""
-        ctk.CTkLabel(tab, text=label).grid(row=row, column=0, sticky="w", padx=(4, 8), pady=6)
-        ctk.CTkEntry(tab, textvariable=var).grid(row=row, column=1, sticky="ew", pady=6)
-        btn = ctk.CTkButton(tab, text=button, width=120, command=command)
-        btn.grid(row=row, column=2, padx=(8, 4), pady=6)
-        self.busy_widgets.append(btn)
+    def _section(self, master, row, title):
+        frame = ctk.CTkFrame(master)
+        frame.grid(row=row, column=0, columnspan=3, sticky="ew", padx=4, pady=(8, 0))
+        frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(weight="bold")) \
+            .grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
+        return frame
 
-    def _note(self, tab, row, text):
-        ctk.CTkLabel(tab, text=text, justify="left", anchor="w", text_color=("gray35", "gray65")) \
-            .grid(row=row, column=1, columnspan=2, sticky="ew", pady=(0, 6))
+    def _auto(self, row: PathRow, value):
+        """Pone un valor por defecto salvo que el usuario haya escrito otro."""
+        if row.get() in ("", self._autos.get(id(row), "")):
+            row.set(value)
+            self._autos[id(row)] = str(value)
 
-    def _build_extract_tab(self, tab):
-        tab.grid_columnconfigure(1, weight=1)
-        tab.grid_rowconfigure(6, weight=1)
+    def _browse_dir(self, row: PathRow, title):
+        path = filedialog.askdirectory(title=title)
+        if path:
+            row.set(path)
 
-        self.src_var = tk.StringVar()
-        ctk.CTkLabel(tab, text="Game folder or .pac:").grid(row=0, column=0, sticky="w",
-                                                                 padx=(4, 8), pady=6)
-        src_entry = ctk.CTkEntry(tab, textvariable=self.src_var)
-        src_entry.grid(row=0, column=1, sticky="ew", pady=6)
-        src_entry.bind("<Return>", lambda _e: self._update_src_info())
-        src_entry.bind("<FocusOut>", lambda _e: self._update_src_info())
-        btns = ctk.CTkFrame(tab, fg_color="transparent")
-        btns.grid(row=0, column=2, padx=(8, 4), pady=6)
-        b1 = ctk.CTkButton(btns, text="Folder…", width=80, command=self.browse_src_dir)
-        b1.pack(side="left")
-        b2 = ctk.CTkButton(btns, text=".pac…", width=60, command=self.browse_src_pac)
-        b2.pack(side="left", padx=(6, 0))
-        self.busy_widgets += [b1, b2]
+    @staticmethod
+    def _free_update_name(game: Path) -> str:
+        """El primer UpdateN.pac (4..8) que no existe en la carpeta del juego."""
+        for n in range(4, 9):
+            if not (game / f"Update{n}.pac").exists():
+                return f"Update{n}.pac"
+        return "Update8.pac"
 
-        self.src_info = ctk.CTkLabel(tab, text="", anchor="w", justify="left",
-                                     text_color=("gray35", "gray65"))
-        self.src_info.grid(row=1, column=1, columnspan=2, sticky="ew")
+    @staticmethod
+    def _new_dir(pac_path) -> Path:
+        """<carpeta del juego>_new, junto al juego."""
+        game = Path(pac_path).parent
+        return game.parent / f"{game.name}_new"
 
-        self.out_var = tk.StringVar()
-        self._path_row(tab, 2, "Output:", self.out_var, lambda: self._ask_dir(self.out_var, "Output folder"))
-
-        cats = ctk.CTkFrame(tab, fg_color="transparent")
-        cats.grid(row=3, column=1, columnspan=2, sticky="ew", pady=6)
-        self.cat_vars = {}
-        for key, label in CATEGORY_LABELS:
-            var = tk.BooleanVar(value=True)
-            cb = ctk.CTkCheckBox(cats, text=label, variable=var, width=90)
-            cb.pack(side="left", padx=(0, 10))
-            self.cat_vars[key] = var
-            self.busy_widgets.append(cb)
-
-        opts = ctk.CTkFrame(tab, fg_color="transparent")
-        opts.grid(row=4, column=1, columnspan=2, sticky="ew", pady=6)
-        self.resume_var = tk.BooleanVar(value=True)
-        self.convert_var = tk.BooleanVar(value=True)
-        self.extras_var = tk.BooleanVar(value=True)
-        self.sprites_var = tk.BooleanVar(value=False)
-        for text, var in (("Resume", self.resume_var), ("FIL masks as PNG", self.convert_var),
-                          ("Extras (NMV frames, JSON, CSV)", self.extras_var),
-                          ("Compose sprites", self.sprites_var)):
-            cb = ctk.CTkCheckBox(opts, text=text, variable=var)
-            cb.pack(side="left", padx=(0, 14))
-            self.busy_widgets.append(cb)
-
-        ctk.CTkLabel(tab, text="Each .pac goes to its own folder. Extras are for viewing only; repacking "
-                               "ignores them.", anchor="w", text_color=("gray35", "gray65")) \
-            .grid(row=5, column=1, sticky="w", pady=(6, 0))
-        btn = ctk.CTkButton(tab, text="Extract", width=160, command=self.start_extract)
-        btn.grid(row=5, column=2, sticky="e", padx=4, pady=(6, 0))
-        self.busy_widgets.append(btn)
-
-        self.preview = ctk.CTkLabel(tab, text="")
-        self.preview.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=8)
-
-    def _build_repack_tab(self, tab):
-        tab.grid_columnconfigure(1, weight=1)
-        self.rp_pac_var = tk.StringVar()
-        self.rp_dir_var = tk.StringVar()
-        self.rp_out_var = tk.StringVar()
-        self._path_row(tab, 0, "Original .pac:", self.rp_pac_var,
-                       lambda: self._ask_open(self.rp_pac_var, "Original .pac file", self._rp_defaults))
-        self._path_row(tab, 1, "Extracted folder:", self.rp_dir_var,
-                       lambda: self._ask_dir(self.rp_dir_var, "Folder with the extracted files"))
-        self._note(tab, 2, "The extraction output folder (or that .pac's folder inside it). Only the files you "
-                           "edited are\nre-encoded; everything else is copied from the original.")
-        self._path_row(tab, 3, "Output .pac:", self.rp_out_var,
-                       lambda: self._ask_save(self.rp_out_var, "Save .pac"), "Save as…")
-        self.rp_patch_var = tk.BooleanVar(value=True)
-        self.rp_add_var = tk.BooleanVar(value=False)
-        self.resize_var = tk.BooleanVar(value=False)
-        row = 4
-        for text, var in (("Only the changed files (a patch to save as Update4.pac … Update8.pac)", self.rp_patch_var),
-                          ("Also add new files from the folder", self.rp_add_var),
-                          ("Allow images with a different size than the original", self.resize_var)):
-            cb = ctk.CTkCheckBox(tab, text=text, variable=var, command=self._rp_patch_changed)
-            cb.grid(row=row, column=1, sticky="w", pady=4)
-            self.busy_widgets.append(cb)
-            row += 1
-        self._note(tab, row, "The game loads Update8.pac first and Update.pac last, before the base archives:\n"
-                             "a patch overrides the files it contains without touching the game files.")
-        btn = ctk.CTkButton(tab, text="Create .pac", width=160, command=self.start_repack)
-        btn.grid(row=row + 1, column=2, sticky="e", padx=4, pady=(18, 0))
-        self.busy_widgets.append(btn)
-
-    def _build_text_tab(self, tab):
-        tab.grid_columnconfigure(1, weight=1)
-        tab.grid_rowconfigure(9, weight=1)
-        self.tx_pac_var = tk.StringVar()
-        self.tx_ref_var = tk.StringVar()
-        self.tx_dir_var = tk.StringVar()
-        self.charmap_var = tk.StringVar()
-        self.tx_out_var = tk.StringVar()
-        self._path_row(tab, 0, "Script .pac:", self.tx_pac_var,
-                       lambda: self._ask_open(self.tx_pac_var, "Script.pac, Update3.pac or Config.pac",
-                                              self._tx_defaults))
-        self._path_row(tab, 1, "Reference .pac:", self.tx_ref_var,
-                       lambda: self._ask_open(self.tx_ref_var, "Reference .pac (optional)"))
-        self._note(tab, 2, "Optional: the same scripts in another language (e.g. Update3.pac, English). Each "
-                           "line gets\nthe reference text as a '#>' comment.")
-        self._path_row(tab, 3, "Text folder:", self.tx_dir_var,
-                       lambda: self._ask_dir(self.tx_dir_var, "Text folder"))
-        self._path_row(tab, 4, "Character table:", self.charmap_var,
-                       lambda: self._ask_open(self.charmap_var, "Character table (optional)",
-                                              types=[("Text", "*.txt"), ("All", "*.*")]))
-
-        row = ctk.CTkFrame(tab, fg_color="transparent")
-        row.grid(row=5, column=1, columnspan=2, sticky="ew", pady=6)
-        self.listing_var = tk.BooleanVar(value=False)
-        self.json_var = tk.BooleanVar(value=False)
-        cb1 = ctk.CTkCheckBox(row, text="Script listing", variable=self.listing_var)
-        cb1.pack(side="left")
-        cb2 = ctk.CTkCheckBox(row, text="JSON", variable=self.json_var)
-        cb2.pack(side="left", padx=(14, 0))
-        btn = ctk.CTkButton(row, text="Extract text", width=140, command=self.start_text)
-        btn.pack(side="right", padx=(8, 4))
-        self.busy_widgets += [cb1, cb2, btn]
-
-        self._path_row(tab, 6, "Output .pac:", self.tx_out_var,
-                       lambda: self._ask_save(self.tx_out_var, "Save .pac"), "Save as…")
-        row = ctk.CTkFrame(tab, fg_color="transparent")
-        row.grid(row=7, column=1, columnspan=2, sticky="ew", pady=6)
-        self.tx_patch_var = tk.BooleanVar(value=True)
-        cb = ctk.CTkCheckBox(row, text="Only the changed files (patch)", variable=self.tx_patch_var)
-        cb.pack(side="left")
-        btn = ctk.CTkButton(row, text="Rebuild", width=140, command=self.start_text_rebuild)
-        btn.pack(side="right", padx=(8, 4))
-        self.busy_widgets += [cb, btn]
-
-        self.report_box = ctk.CTkTextbox(tab, height=120, wrap="none")
-        self.report_box.grid(row=9, column=0, columnspan=3, sticky="nsew", padx=4, pady=(8, 0))
-        self.report_box.configure(state="disabled")
+    # ------------------------------------------------------------ Pestaña PAC
 
     def _build_pac_tab(self, tab):
         tab.grid_columnconfigure(1, weight=1)
         tab.grid_rowconfigure(3, weight=1)
 
-        self.pac_var = tk.StringVar()
-        ctk.CTkLabel(tab, text=".pac file:").grid(row=0, column=0, sticky="w", padx=(4, 8), pady=4)
-        pac_entry = ctk.CTkEntry(tab, textvariable=self.pac_var)
-        pac_entry.grid(row=0, column=1, sticky="ew", pady=4)
-        pac_entry.bind("<Return>", lambda _e: self.load_pac(self.pac_var.get()))
-        btn = ctk.CTkButton(tab, text="Open…", width=100, command=self.browse_pac)
-        btn.grid(row=0, column=2, padx=(8, 4), pady=4)
-        self.busy_widgets.append(btn)
+        self.pac_path = PathRow(tab, 0, ".pac file:", self.browse_pac, "Open…")
+        self.pac_path.entry.bind("<Return>", lambda _e: self.load_pac(self.pac_path.get()))
+        self._busy(self.pac_path.button)
 
-        self.pac_info = ctk.CTkLabel(tab, text="No file open", anchor="w", text_color=("gray35", "gray65"))
+        self.pac_info = muted(ctk.CTkLabel, tab, text="No file open", anchor="w")
         self.pac_info.grid(row=1, column=0, columnspan=3, sticky="ew", padx=4)
 
-        self.filter_var = tk.StringVar()
-        self.filter_var.trace_add("write", lambda *_: self._refresh_tree())
-        ctk.CTkLabel(tab, text="Filter:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=4)
+        self.pac_filter = tk.StringVar()
+        self.pac_filter.trace_add("write", lambda *_: self._refresh_pac_tree())
+        ctk.CTkLabel(tab, text="Filter:").grid(row=2, column=0, sticky="w", padx=(4, 8), pady=3)
         filt = ctk.CTkFrame(tab, fg_color="transparent")
-        filt.grid(row=2, column=1, columnspan=2, sticky="ew", padx=(0, 4), pady=4)
+        filt.grid(row=2, column=1, columnspan=2, sticky="ew", padx=(0, 4), pady=3)
         filt.grid_columnconfigure(0, weight=1)
-        ctk.CTkEntry(filt, textvariable=self.filter_var, placeholder_text="name contains…") \
+        ctk.CTkEntry(filt, textvariable=self.pac_filter, placeholder_text="name contains…") \
             .grid(row=0, column=0, sticky="ew")
-        self.type_var = tk.StringVar(value=ALL_TYPES)
-        self.type_menu = ctk.CTkOptionMenu(filt, values=[ALL_TYPES], width=100, variable=self.type_var,
-                                           command=lambda _v: self._refresh_tree())
-        self.type_menu.grid(row=0, column=1, padx=(8, 0))
+        self.pac_type = tk.StringVar(value=ALL_TYPES)
+        self.pac_type_menu = ctk.CTkOptionMenu(filt, values=[ALL_TYPES], width=100, variable=self.pac_type,
+                                               command=lambda _v: self._refresh_pac_tree())
+        self.pac_type_menu.grid(row=0, column=1, padx=(8, 0))
 
-        tree_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        tree_frame.grid(row=3, column=0, columnspan=3, sticky="nsew", padx=4, pady=4)
-        tree_frame.grid_columnconfigure(0, weight=1)
-        tree_frame.grid_rowconfigure(0, weight=1)
-        self.tree = ttk.Treeview(tree_frame, columns=("type", "size"), selectmode="extended",
-                                 style="NeXAS.Treeview")
-        self.tree.heading("#0", text="Name", anchor="w")
-        self.tree.heading("type", text="Type", anchor="w")
-        self.tree.heading("size", text="Size", anchor="e")
-        self.tree.column("#0", stretch=True, width=400)
-        self.tree.column("type", stretch=False, width=80, anchor="w")
-        self.tree.column("size", stretch=False, width=110, anchor="e")
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        scroll = ctk.CTkScrollbar(tree_frame, command=self.tree.yview)
-        scroll.grid(row=0, column=1, sticky="ns")
-        self.tree.configure(yscrollcommand=scroll.set)
-        self.tree.bind("<<TreeviewSelect>>", lambda _e: self._update_selection_label())
+        body = ctk.CTkFrame(tab, fg_color="transparent")
+        body.grid(row=3, column=0, columnspan=3, sticky="nsew", padx=4, pady=4)
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_rowconfigure(0, weight=1)
+        frame, self.pac_tree = self._make_tree(body, ("name", "type", "size"), ("Name", "Type", "Size"),
+                                               (300, 70, 100), {"size": "e"})
+        frame.grid(row=0, column=0, sticky="nsew")
+        self.pac_tree.bind("<<TreeviewSelect>>", lambda _e: self._on_pac_select())
+        self.pac_preview = Preview(body)
+        self.pac_preview.grid(row=0, column=1, sticky="ns", padx=(8, 0))
+        self.pac_preview.bind_keys(self.pac_tree)
 
-        self.raw_out_var = tk.StringVar()
-        ctk.CTkLabel(tab, text="Output:").grid(row=4, column=0, sticky="w", padx=(4, 8), pady=4)
-        ctk.CTkEntry(tab, textvariable=self.raw_out_var).grid(row=4, column=1, sticky="ew", pady=4)
-        btn = ctk.CTkButton(tab, text="Browse…", width=100,
-                            command=lambda: self._ask_dir(self.raw_out_var, "Output folder"))
-        btn.grid(row=4, column=2, padx=(8, 4), pady=4)
-        self.busy_widgets.append(btn)
+        self.pac_out = PathRow(tab, 4, "Output:", lambda: self._browse_dir(self.pac_out, "Output folder"))
+        self._busy(self.pac_out.button)
 
         actions = ctk.CTkFrame(tab, fg_color="transparent")
-        actions.grid(row=5, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
-        self.sel_label = ctk.CTkLabel(actions, text="", text_color=("gray35", "gray65"))
-        self.sel_label.pack(side="left")
-        btn_all = ctk.CTkButton(actions, text="Extract all", command=lambda: self.start_raw(False))
-        btn_all.pack(side="right")
-        btn_sel = ctk.CTkButton(actions, text="Extract selected", command=lambda: self.start_raw(True))
-        btn_sel.pack(side="right", padx=8)
-        btn_pack = ctk.CTkButton(actions, text="Pack folder…", fg_color="gray40",
-                                 hover_color="gray30", command=self.start_pack)
-        btn_pack.pack(side="right", padx=(0, 8))
-        self.busy_widgets += [btn_all, btn_sel, btn_pack]
+        actions.grid(row=5, column=0, columnspan=3, sticky="ew", padx=4, pady=(2, 0))
+        self.resume_var = tk.BooleanVar(value=True)
+        self.extras_var = tk.BooleanVar(value=False)
+        self._busy(ctk.CTkCheckBox(actions, text="Resume", variable=self.resume_var)).pack(side="left")
+        self._busy(ctk.CTkCheckBox(actions, text="Viewing extras", variable=self.extras_var)) \
+            .pack(side="left", padx=(12, 0))
+        self.pac_sel_label = muted(ctk.CTkLabel, actions, text="")
+        self.pac_sel_label.pack(side="left", padx=12)
+        self._busy(ctk.CTkButton(actions, text="Extract game…", width=120,
+                                 command=lambda: self.start_pac_extract("game"))).pack(side="right")
+        self._busy(ctk.CTkButton(actions, text="Extract all", width=110,
+                                 command=lambda: self.start_pac_extract("all"))).pack(side="right", padx=8)
+        self._busy(ctk.CTkButton(actions, text="Extract selected", width=120,
+                                 command=lambda: self.start_pac_extract("selected"))).pack(side="right")
+        muted(ctk.CTkLabel, tab, anchor="w",
+              text="FIL masks are saved as PNG and the rest as is, in a folder per .pac. Viewing extras "
+                   "(NMV frames, sprites, CSV) are not repacked.") \
+            .grid(row=6, column=0, columnspan=3, sticky="ew", padx=4, pady=(2, 0))
 
-        ctk.CTkLabel(tab, text="Files are saved as they are in the .pac (decompressed).",
-                     anchor="w", text_color=("gray35", "gray65")) \
-            .grid(row=6, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
+        pack = self._section(tab, 7, "Pack")
+        self.pac_pack_in = PathRow(pack, 1, "Folder:", lambda: self._browse_dir(self.pac_pack_in,
+                                                                                 "Folder with the files"))
+        self.pac_pack_out = PathRow(pack, 2, ".pac file:", self.browse_pac_pack_out, "Save as…")
+        self._busy(self.pac_pack_in.button, self.pac_pack_out.button)
+        opts = ctk.CTkFrame(pack, fg_color="transparent")
+        opts.grid(row=3, column=1, sticky="w")
+        self.patch_var = tk.BooleanVar(value=True)
+        self.add_var = tk.BooleanVar(value=False)
+        self.resize_var = tk.BooleanVar(value=False)
+        self._busy(ctk.CTkCheckBox(opts, text="Only the changed files (patch)", variable=self.patch_var,
+                                   command=self._pack_defaults)).pack(side="left")
+        self._busy(ctk.CTkCheckBox(opts, text="Add new files", variable=self.add_var)).pack(side="left", padx=12)
+        self._busy(ctk.CTkCheckBox(opts, text="Allow a different image size", variable=self.resize_var)) \
+            .pack(side="left")
+        self._busy(ctk.CTkButton(pack, text="Pack", width=140, command=self.start_pac_pack)) \
+            .grid(row=3, column=2, sticky="e", padx=4, pady=(2, 8))
+        muted(ctk.CTkLabel, pack, anchor="w", justify="left",
+              text="An extracted folder is repacked over the open .pac; a patch (Update4.pac … Update8.pac) "
+                   "overrides only\nthe files it contains. Any other folder becomes a new .pac with the "
+                   "order and compression of the open one.") \
+            .grid(row=4, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 6))
+
+    def browse_pac(self):
+        path = filedialog.askopenfilename(title="Open .pac file", filetypes=PAC_TYPES)
+        if path:
+            self.load_pac(path)
+
+    def load_pac(self, path):
+        path = path.strip().strip('"')
+        if not path:
+            return
+        try:
+            pac = nexas_pac.Pac(path)
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, f"Could not read the file:\n{e}")
+            return
+        if self._pac is not None:
+            self._pac.close()
+        self._pac = pac
+        self.entries = pac.entries
+        self.pac_path.set(path)
+        p = Path(path)
+        self._auto(self.pac_out, p.parent.parent / f"{p.parent.name}_extracted")
+        self._auto(self.pac_pack_in, Path(self.pac_out.get()) / p.stem)
+        self._pack_defaults()
+
+        types = Counter(e.ext or '(none)' for e in self.entries)
+        total = sum(e.size for e in self.entries)
+        self.pac_info.configure(text=f"{len(self.entries)} files  ·  {format_size(total)}  ·  "
+                                     f"compression: {nexas_pac.PACK_NAMES[pac.pack]}  ·  "
+                                     + ", ".join(f"{n} {ext}" for ext, n in types.most_common()))
+        self.pac_type_menu.configure(values=[ALL_TYPES] + sorted(types))
+        self.pac_type.set(ALL_TYPES)
+        self._refresh_pac_tree()
+        self.pac_preview.show()
+
+    def _pack_defaults(self):
+        pac = self.pac_path.get()
+        if pac:
+            p = Path(pac)
+            name = self._free_update_name(p.parent) if self.patch_var.get() else p.name
+            self._auto(self.pac_pack_out, self._new_dir(pac) / name)
+
+    def _refresh_pac_tree(self):
+        self.pac_tree.delete(*self.pac_tree.get_children())
+        text = self.pac_filter.get().lower()
+        ext = self.pac_type.get()
+        for i, e in enumerate(self.entries):
+            if text in e.name.lower() and ext in (ALL_TYPES, e.ext or '(none)'):
+                self.pac_tree.insert("", "end", iid=str(i), text=e.name, values=(e.ext, format_size(e.size)))
+        self._update_pac_sel()
+
+    def _update_pac_sel(self):
+        if not self.entries:
+            self.pac_sel_label.configure(text="")
+            return
+        self.pac_sel_label.configure(
+            text=f"{len(self.pac_tree.get_children())} shown · {len(self.pac_tree.selection())} selected")
+
+    def _on_pac_select(self):
+        self._update_pac_sel()
+        sel = self.pac_tree.selection()
+        if len(sel) != 1:
+            return
+        e = self.entries[int(sel[0])]
+        header = f"{e.name}\n{e.ext.upper() or 'File'} · {format_size(e.size)}"
+        if e.size > PREVIEW_MAX_SIZE:
+            self.pac_preview.show(header)
+            return
+        try:
+            items = image_items(self._pac, e)
+        except Exception as ex:
+            self.pac_preview.show(f"{header}\n\nCould not show it:\n{ex}")
+            return
+        self.pac_preview.show(header, items)
+
+    def start_pac_extract(self, scope):
+        out_dir = self.pac_out.get()
+        if scope != "game" and not self.entries:
+            messagebox.showwarning(APP_TITLE, "Open a .pac file first.")
+            return
+        if not out_dir:
+            messagebox.showwarning(APP_TITLE, "Choose an output folder.")
+            return
+        extras = self.extras_var.get()
+        kwargs = {"resume": self.resume_var.get(), "extras": extras, "sprites": extras}
+        if scope == "game":
+            start = Path(self.pac_path.get()).parent if self.pac_path.get() else None
+            src = filedialog.askdirectory(title="Game folder", initialdir=start)
+            if not src:
+                return
+            if not nexas_extract.find_pacs(src):
+                messagebox.showwarning(APP_TITLE, "There are no .pac files in that folder.")
+                return
+            folder = Path(out_dir)
+        else:
+            src = self.pac_path.get()
+            folder = Path(out_dir) / Path(src).stem
+            if scope == "selected":
+                names = [self.entries[int(i)].name for i in self.pac_tree.selection()]
+                if not names:
+                    messagebox.showwarning(APP_TITLE, "No files selected.")
+                    return
+                kwargs["names"] = names
+
+        def done(r):
+            if scope != "game":
+                self._auto(self.pac_pack_in, folder)
+            text = f"{r.files} files ({r.converted} converted)"
+            if r.extras:
+                text += f" and {r.extras} extra files"
+            if r.skipped:
+                text += f" ({r.skipped} were already done)"
+            if r.warnings:
+                text += f"\n\n{len(r.warnings)} warnings:\n" + "\n".join(r.warnings[:5])
+            if r.errors:
+                text += f"\n\n{len(r.errors)} errors:\n" + "\n".join(r.errors[:10])
+            self._ask_open(f"{text}\n\nin:\n{folder}", folder)
+
+        self.pac_preview.show()
+        self.run_task(nexas_extract.extract_all, (src, out_dir), kwargs,
+                      "Extracting the game" if scope == "game" else "Extracting", done)
+
+    def browse_pac_pack_out(self):
+        path = self._ask_save("Save .pac", self.pac_pack_out.get() or "Update4.pac", ".pac", PAC_TYPES)
+        if path:
+            self.pac_pack_out.set(path)
+
+    def start_pac_pack(self):
+        pac, folder, out = self.pac_path.get(), self.pac_pack_in.get(), self.pac_pack_out.get()
+        if not self.entries:
+            messagebox.showwarning(APP_TITLE, "Open the original .pac first.")
+            return
+        if not folder or not Path(folder).is_dir():
+            messagebox.showwarning(APP_TITLE, "Choose the folder with the files.")
+            return
+        if not self._check_output(out, source=pac):
+            return
+        try:
+            nexas_extract.find_files_folder(folder, pac)
+        except ValueError:
+            # Carpeta sin extraer con esta herramienta: un .pac nuevo como el abierto
+            self.run_task(nexas_pac.pack, (folder, out), {"order_from": pac}, "Packing",
+                          lambda n: self._ask_open(f"Archive created ({n} files):\n{out}", Path(out).parent))
+            return
+
+        def done(r):
+            if r.errors:
+                messagebox.showerror(APP_TITLE, "The file was not created. Errors:\n\n" + "\n".join(r.errors[:15]))
+                return
+            if not r.entries:
+                messagebox.showinfo(APP_TITLE, "No file was edited since the extraction: no file was written.")
+                return
+            changed = r.changed + [f"{n} (new)" for n in r.added]
+            listing = "\n".join(changed[:15]) + ("\n…" if len(changed) > 15 else "")
+            self._ask_open(f"{len(r.changed)} files replaced, {len(r.added)} added:\n{listing}\n\n"
+                           f"{out} ({r.entries} files)", Path(out).parent)
+
+        self.run_task(nexas_extract.repack, (pac, folder, out),
+                      {"patch_only": self.patch_var.get(), "add_new": self.add_var.get(),
+                       "allow_resize": self.resize_var.get()}, "Repacking", done)
+
+    # ------------------------------------------------------------ Pestaña Text
+
+    def _build_text_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        tab.grid_rowconfigure(8, weight=1)
+
+        self.tx_pac = PathRow(tab, 0, "Script .pac:", self.browse_tx_pac, "Open…")
+        self.tx_ref = PathRow(tab, 1, "Reference .pac:", self.browse_tx_ref)
+        self.tx_text = PathRow(tab, 2, "Text folder:", lambda: self._browse_dir(self.tx_text, "Text folder"))
+        self.tx_charmap = PathRow(tab, 3, "Character table:", self.browse_charmap)
+        self._busy(self.tx_pac.button, self.tx_ref.button, self.tx_text.button, self.tx_charmap.button)
+
+        ext = ctk.CTkFrame(tab)
+        ext.grid(row=4, column=0, columnspan=3, sticky="ew", padx=4, pady=(6, 4))
+        ctk.CTkLabel(ext, text="Extract", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=8, pady=6)
+        self.tx_listing = tk.BooleanVar(value=False)
+        self.tx_json = tk.BooleanVar(value=False)
+        self._busy(ctk.CTkCheckBox(ext, text="Script listing", variable=self.tx_listing)).pack(side="left", padx=8)
+        self._busy(ctk.CTkCheckBox(ext, text="JSON", variable=self.tx_json)).pack(side="left", padx=8)
+        self._busy(ctk.CTkButton(ext, text="Extract text", width=140, command=self.start_tx_extract)) \
+            .pack(side="right", padx=8, pady=6)
+
+        reb = ctk.CTkFrame(tab)
+        reb.grid(row=5, column=0, columnspan=3, sticky="ew", padx=4, pady=(0, 4))
+        reb.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(reb, text="Rebuild", font=ctk.CTkFont(weight="bold")) \
+            .grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
+        self.tx_out = PathRow(reb, 1, "Output .pac:", self.browse_tx_out, "Save as…")
+        self._busy(self.tx_out.button)
+        self.tx_patch = tk.BooleanVar(value=True)
+        self._busy(ctk.CTkCheckBox(reb, text="Only the changed files (patch)", variable=self.tx_patch)) \
+            .grid(row=2, column=1, sticky="w", pady=3)
+        self._busy(ctk.CTkButton(reb, text="Rebuild", width=140, command=self.start_tx_rebuild)) \
+            .grid(row=2, column=2, sticky="e", padx=4, pady=(3, 8))
+        muted(ctk.CTkLabel, reb, justify="left", anchor="w",
+              text="Lines can be any length. The reference .pac (optional, e.g. Update3.pac in English) adds "
+                   "its text to each line\nas a '#>' comment.") \
+            .grid(row=3, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 6))
+
+        bar = ctk.CTkFrame(tab, fg_color="transparent")
+        bar.grid(row=6, column=0, columnspan=3, sticky="ew", padx=4)
+        self.report_label = muted(ctk.CTkLabel, bar, text="The report will appear here after rebuilding.",
+                                  anchor="w", justify="left", wraplength=640)
+        self.report_label.pack(side="left", fill="x", expand=True)
+        self.report_filter = ctk.CTkOptionMenu(bar, values=list(REPORT_FILTERS), width=200,
+                                               command=lambda _v: self._refresh_report())
+        self.report_filter.pack(side="right")
+
+        frame, self.report_tree = self._make_tree(
+            tab, ("entry", "key", "state", "detail"), ("File", "Line", "Status", "Detail"), (160, 90, 200, 0))
+        frame.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=4, pady=4)
+
+    def browse_tx_pac(self):
+        path = filedialog.askopenfilename(title="Script.pac, Update3.pac or Config.pac", filetypes=PAC_TYPES)
+        if path:
+            self.tx_pac.set(path)
+            p = Path(path)
+            game = p.parent
+            self._auto(self.tx_text, game.parent / f"{game.name}_text")
+            if p.stem.lower() == 'script' and (game / "Update3.pac").exists():
+                self._auto(self.tx_ref, game / "Update3.pac")
+            self._auto(self.tx_out, self._new_dir(path) / self._free_update_name(game))
+
+    def browse_tx_ref(self):
+        path = filedialog.askopenfilename(title="Reference .pac (optional)", filetypes=PAC_TYPES)
+        if path:
+            self.tx_ref.set(path)
+
+    def browse_charmap(self):
+        path = filedialog.askopenfilename(title="Character table (optional)",
+                                          filetypes=[("Text", "*.txt"), ("All", "*.*")])
+        if path:
+            self.tx_charmap.set(path)
+
+    def browse_tx_out(self):
+        path = self._ask_save("Save .pac", self.tx_out.get() or "Update4.pac", ".pac", PAC_TYPES)
+        if path:
+            self.tx_out.set(path)
+
+    def _load_charmap(self):
+        """Devuelve (ok, charmap)."""
+        path = self.tx_charmap.get()
+        if not path:
+            return True, None
+        try:
+            return True, nexas_script.CharMap.load(path)
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, f"Error in the character table:\n{e}")
+            return False, None
+
+    def start_tx_extract(self):
+        pac, ref, folder = self.tx_pac.get(), self.tx_ref.get(), self.tx_text.get()
+        if not pac or not Path(pac).is_file():
+            messagebox.showwarning(APP_TITLE, "Choose the script .pac.")
+            return
+        if ref and not Path(ref).is_file():
+            messagebox.showwarning(APP_TITLE, "The reference .pac does not exist.")
+            return
+        if not folder:
+            messagebox.showwarning(APP_TITLE, "Choose the text folder.")
+            return
+        ok, charmap = self._load_charmap()
+        if not ok:
+            return
+
+        def done(r):
+            text = (f"{r.lines} lines from {r.files} files. One file per script: INDEX|TEXT "
+                    "(tables: ROW:COLUMN|TEXT); translate only the text.")
+            if r.warnings:
+                text += "\n" + " · ".join(r.warnings[:3])
+            self.report_label.configure(text=text)
+            self._ask_open(f"Extracted {r.lines} lines from {r.files} files to:\n{folder}", folder)
+
+        self.run_task(nexas_script.extract_text, (pac, folder),
+                      {"reference": ref or None, "charmap": charmap, "with_listing": self.tx_listing.get(),
+                       "with_json": self.tx_json.get()}, "Extracting text", done)
+
+    def start_tx_rebuild(self):
+        pac, folder, out = self.tx_pac.get(), self.tx_text.get(), self.tx_out.get()
+        if not pac or not Path(pac).is_file():
+            messagebox.showwarning(APP_TITLE, "Choose the script .pac.")
+            return
+        if not folder or not Path(folder).is_dir():
+            messagebox.showwarning(APP_TITLE, "Choose the translated text folder.")
+            return
+        if not self._check_output(out, source=pac):
+            return
+        ok, charmap = self._load_charmap()
+        if not ok:
+            return
+
+        def done(rep):
+            self.report = rep
+            text = rep.summary()
+            if rep.warnings:
+                text += "\n" + " · ".join(rep.warnings[:3])
+            self.report_label.configure(text=text)
+            self._refresh_report()
+            msg = f"{rep.summary()}"
+            if rep.output_entries:
+                msg = f"Archive created ({rep.output_entries} files):\n{out}\n\n{msg}"
+            if rep.entries:
+                msg += f"\n\n{len(rep.entries)} lines with notes: check the report."
+            self._ask_open(msg, Path(out).parent)
+
+        self.run_task(nexas_script.rebuild, (pac, folder, out),
+                      {"charmap": charmap, "patch_only": self.tx_patch.get()}, "Rebuilding", done)
+
+    def _refresh_report(self):
+        self.report_tree.delete(*self.report_tree.get_children())
+        if not self.report:
+            return
+        keep = REPORT_FILTERS[self.report_filter.get()]
+        rows = [e for e in self.report.entries if keep(e)]
+        for i, e in enumerate(rows[:MAX_REPORT_ROWS]):
+            self.report_tree.insert("", "end", iid=str(i), text=e.entry,
+                                    values=(e.key, ", ".join(e.flags), e.detail))
+        if len(rows) > MAX_REPORT_ROWS:
+            self.report_tree.insert("", "end", iid="more", text="…",
+                                    values=("", f"{len(rows) - MAX_REPORT_ROWS} more", ""))
+
+    # ------------------------------------------------------------ Comunes
+
+    def _ask_save(self, title, current, ext, types):
+        initial = Path(current)
+        return filedialog.asksaveasfilename(
+            title=title, defaultextension=ext, initialfile=initial.name,
+            initialdir=str(initial.parent) if initial.parent.exists() else None, filetypes=types)
+
+    def _check_output(self, out_file, source=None):
+        if not out_file:
+            messagebox.showwarning(APP_TITLE, "Choose the output file.")
+            return False
+        out_path = Path(out_file).resolve()
+        if source and out_path == Path(source).resolve():
+            messagebox.showwarning(APP_TITLE, "The output cannot be the original file.")
+            return False
+        if out_path.exists() and not messagebox.askyesno(APP_TITLE, f"{out_path.name} already exists.\nOverwrite it?"):
+            return False
+        return True
+
+    def _ask_open(self, msg, folder):
+        if messagebox.askyesno(APP_TITLE, f"{msg}\n\nOpen the folder?"):
+            open_folder(folder)
 
     def _build_status_bar(self):
         bar = ctk.CTkFrame(self)
@@ -335,20 +728,16 @@ class App(ctk.CTk):
         self.progress = ctk.CTkProgressBar(bar)
         self.progress.set(0)
         self.progress.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 4))
-
-        self.status = ctk.CTkLabel(bar, text="Ready", anchor="w")
+        ready = "Ready"
+        self.status = ctk.CTkLabel(bar, text=ready, anchor="w")
         self.status.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 8))
 
         self.cancel_btn = ctk.CTkButton(bar, text="Cancel", width=90, state="disabled",
                                         fg_color="#b23b3b", hover_color="#8f2f2f",
                                         command=self.cancel_task)
         self.cancel_btn.grid(row=0, column=2, rowspan=2, padx=(0, 10))
-
-        theme = ctk.CTkOptionMenu(bar, values=["System", "Light", "Dark"], width=100,
-                                  command=self._change_theme)
-        theme.grid(row=0, column=3, rowspan=2, padx=(0, 10))
-
-    # --------------------------------------------------------------- Tema
+        ctk.CTkOptionMenu(bar, values=["System", "Light", "Dark"], width=100,
+                          command=self._change_theme).grid(row=0, column=3, rowspan=2, padx=(0, 10))
 
     def _change_theme(self, value):
         ctk.set_appearance_mode({"System": "system", "Light": "light", "Dark": "dark"}[value])
@@ -365,334 +754,6 @@ class App(ctk.CTk):
         style.map("NeXAS.Treeview", background=[("selected", "#1f6aa5")], foreground=[("selected", "#ffffff")])
         style.configure("NeXAS.Treeview.Heading", background=head_bg, foreground=fg, relief="flat")
         style.map("NeXAS.Treeview.Heading", background=[("active", head_bg)])
-
-    # ------------------------------------------------- Diálogos comunes
-
-    def _ask_open(self, var, title, then=None, types=None):
-        path = filedialog.askopenfilename(title=title, filetypes=types or PAC_TYPES)
-        if path:
-            var.set(path)
-            if then:
-                then(path)
-
-    def _ask_dir(self, var, title):
-        path = filedialog.askdirectory(title=title)
-        if path:
-            var.set(path)
-
-    def _ask_save(self, var, title):
-        initial = Path(var.get() or "Update4.pac")
-        path = filedialog.asksaveasfilename(title=title, defaultextension=".pac",
-                                            initialdir=str(initial.parent) if initial.parent.exists() else None,
-                                            initialfile=initial.name, filetypes=PAC_TYPES)
-        if path:
-            var.set(path)
-
-    def _confirm_overwrite(self, out_path, *sources) -> bool:
-        out = Path(out_path).resolve()
-        if any(out == Path(s).resolve() for s in sources if s):
-            messagebox.showwarning(APP_TITLE, "The output cannot be the original file.")
-            return False
-        return not out.exists() or messagebox.askyesno(APP_TITLE, f"{out.name} already exists.\nOverwrite it?")
-
-    @staticmethod
-    def _free_update_name(game: Path) -> str:
-        """El primer UpdateN.pac (4..8) que no existe en la carpeta del juego."""
-        for n in range(4, 9):
-            if not (game / f"Update{n}.pac").exists():
-                return f"Update{n}.pac"
-        return "Update8.pac"
-
-    def _rp_defaults(self, _path):
-        self._rp_patch_changed()
-        if not self.rp_dir_var.get() and self.out_var.get():
-            self.rp_dir_var.set(self.out_var.get())
-
-    def _rp_patch_changed(self):
-        pac = self.rp_pac_var.get().strip()
-        if not pac:
-            return
-        p = Path(pac)
-        game = p.parent
-        name = self._free_update_name(game) if self.rp_patch_var.get() else p.name
-        self.rp_out_var.set(str(game.parent / f"{game.name}_new" / name))
-
-    def _tx_defaults(self, path):
-        p = Path(path)
-        game = p.parent
-        if not self.tx_dir_var.get():
-            self.tx_dir_var.set(str(game.parent / f"{game.name}_text"))
-        if not self.tx_ref_var.get() and p.stem.lower() == 'script' and (game / "Update3.pac").exists():
-            self.tx_ref_var.set(str(game / "Update3.pac"))
-        if not self.tx_out_var.get():
-            self.tx_out_var.set(str(game.parent / f"{game.name}_new" / self._free_update_name(game)))
-
-    # ------------------------------------------------------ Pestaña Extraer
-
-    def browse_src_dir(self):
-        path = filedialog.askdirectory(title="Game folder")
-        if path:
-            self._set_src(path)
-
-    def browse_src_pac(self):
-        path = filedialog.askopenfilename(title="Open .pac file", filetypes=PAC_TYPES)
-        if path:
-            self._set_src(path)
-
-    def _set_src(self, path):
-        self.src_var.set(path)
-        if not self.out_var.get():
-            # Junto a la carpeta del juego, nunca dentro
-            p = Path(path)
-            game_dir = p.parent if p.is_file() else p
-            self.out_var.set(str(game_dir.parent / f"{game_dir.name}_extracted"))
-        self._update_src_info()
-
-    def _update_src_info(self):
-        src = self.src_var.get().strip().strip('"')
-        if not src or not Path(src).exists():
-            self.src_info.configure(text="")
-            return
-        try:
-            pacs = nexas_extract.find_pacs(src)
-        except OSError as e:
-            self.src_info.configure(text=str(e))
-            return
-        total = sum(p.stat().st_size for p in pacs)
-        names = ", ".join(p.stem for p in pacs) or "no .pac files"
-        self.src_info.configure(text=f"{len(pacs)} .pac ({format_size(total)}): {names}")
-
-    def start_extract(self):
-        src = self.src_var.get().strip().strip('"')
-        out_dir = self.out_var.get().strip()
-        cats = [k for k, v in self.cat_vars.items() if v.get()]
-        if not src or not Path(src).exists():
-            messagebox.showwarning(APP_TITLE, "Choose the game folder or a .pac file.")
-            return
-        if not out_dir:
-            messagebox.showwarning(APP_TITLE, "Choose an output folder.")
-            return
-        if not cats:
-            messagebox.showwarning(APP_TITLE, "Choose at least one category.")
-            return
-        if not nexas_extract.find_pacs(src):
-            messagebox.showwarning(APP_TITLE, "There are no .pac files to process.")
-            return
-
-        def done(r):
-            text = f"{r.files} files ({r.converted} converted) and {r.extras} extra files in:\n{out_dir}"
-            if r.skipped:
-                text += f"\n({r.skipped} were already done)"
-            if r.warnings:
-                text += f"\n\n{len(r.warnings)} warnings:\n" + "\n".join(r.warnings[:5])
-            if r.errors:
-                text += f"\n\n{len(r.errors)} errors:\n" + "\n".join(r.errors[:10])
-            if messagebox.askyesno(APP_TITLE, text + "\n\nOpen the folder?"):
-                open_folder(out_dir)
-
-        clear_image(self.preview)
-        self.run_task(nexas_extract.extract_all, (src, out_dir),
-                      {"categories": cats, "convert": self.convert_var.get(), "extras": self.extras_var.get(),
-                       "sprites": self.sprites_var.get(), "resume": self.resume_var.get()},
-                      "Extracting", done)
-
-    def _maybe_preview(self, name):
-        """Muestra el último PNG escrito, como mucho cada PREVIEW_INTERVAL segundos."""
-        if not name.lower().endswith(".png") or time.time() - self._last_preview < PREVIEW_INTERVAL:
-            return
-        self._last_preview = time.time()
-        try:
-            with Image.open(name) as img:
-                img.load()
-                self.preview.configure(image=preview_image(img), text="")
-        except OSError:
-            pass
-
-    # -------------------------------------------------- Pestaña Reempaquetar
-
-    def start_repack(self):
-        pac, folder, out = (v.get().strip() for v in (self.rp_pac_var, self.rp_dir_var, self.rp_out_var))
-        if not pac or not Path(pac).is_file():
-            messagebox.showwarning(APP_TITLE, "Choose the original .pac.")
-            return
-        if not folder or not Path(folder).is_dir():
-            messagebox.showwarning(APP_TITLE, "Choose the folder with the extracted files.")
-            return
-        if not out or not self._confirm_overwrite(out, pac):
-            return
-
-        def done(r):
-            if r.errors:
-                messagebox.showerror(APP_TITLE, "The file was not created. Errors:\n\n" + "\n".join(r.errors[:15]))
-                return
-            if not r.entries:
-                messagebox.showinfo(APP_TITLE, "No file was edited since the extraction: no file was written.")
-                return
-            changed = r.changed + [f"{n} (new)" for n in r.added]
-            listing = "\n".join(changed[:15]) + ("\n…" if len(changed) > 15 else "")
-            if messagebox.askyesno(APP_TITLE, f"{len(r.changed)} files replaced, {len(r.added)} added:\n"
-                                              f"{listing}\n\n{out} ({r.entries} files)\n\nOpen the folder?"):
-                open_folder(Path(out).parent)
-
-        self.run_task(nexas_extract.repack, (pac, folder, out),
-                      {"patch_only": self.rp_patch_var.get(), "add_new": self.rp_add_var.get(),
-                       "allow_resize": self.resize_var.get()}, "Repacking", done)
-
-    # ------------------------------------------------------ Pestaña Texto
-
-    def _load_charmap(self):
-        path = self.charmap_var.get().strip()
-        return nexas_script.CharMap.load(path) if path else None
-
-    def _show_report(self, text):
-        self.report_box.configure(state="normal")
-        self.report_box.delete("1.0", "end")
-        self.report_box.insert("1.0", text)
-        self.report_box.configure(state="disabled")
-
-    def start_text(self):
-        pac, ref, folder = (v.get().strip() for v in (self.tx_pac_var, self.tx_ref_var, self.tx_dir_var))
-        if not pac or not Path(pac).is_file():
-            messagebox.showwarning(APP_TITLE, "Choose the script .pac.")
-            return
-        if ref and not Path(ref).is_file():
-            messagebox.showwarning(APP_TITLE, "The reference .pac does not exist.")
-            return
-        if not folder:
-            messagebox.showwarning(APP_TITLE, "Choose the text folder.")
-            return
-        try:
-            charmap = self._load_charmap()
-        except Exception as e:
-            messagebox.showerror(APP_TITLE, str(e))
-            return
-
-        def done(r):
-            lines = [f"{r.lines} lines from {r.files} files in {folder}",
-                     "One file per script: INDEX|TEXT (tables: ROW:COLUMN|TEXT). Translate only the text."]
-            lines += [f"[WARNING] {w}" for w in r.warnings]
-            self._show_report("\n".join(lines))
-            if messagebox.askyesno(APP_TITLE, f"{r.lines} lines from {r.files} files.\n\nOpen the folder?"):
-                open_folder(folder)
-
-        self.run_task(nexas_script.extract_text, (pac, folder),
-                      {"reference": ref or None, "charmap": charmap, "with_listing": self.listing_var.get(),
-                       "with_json": self.json_var.get()}, "Extracting text", done)
-
-    def start_text_rebuild(self):
-        pac, folder, out = (v.get().strip() for v in (self.tx_pac_var, self.tx_dir_var, self.tx_out_var))
-        if not pac or not Path(pac).is_file():
-            messagebox.showwarning(APP_TITLE, "Choose the script .pac.")
-            return
-        if not folder or not Path(folder).is_dir():
-            messagebox.showwarning(APP_TITLE, "Choose the text folder.")
-            return
-        if not out or not self._confirm_overwrite(out, pac):
-            return
-        try:
-            charmap = self._load_charmap()
-        except Exception as e:
-            messagebox.showerror(APP_TITLE, str(e))
-            return
-
-        def done(rep):
-            lines = [rep.summary()]
-            if rep.output_entries:
-                lines.append(f"Output: {out} ({rep.output_entries} files)")
-            lines.append("")
-            lines += [f"[WARNING] {w}" for w in rep.warnings]
-            lines += [f"[{', '.join(e.flags)}] {e.entry} {e.key}: {e.detail}" for e in rep.entries]
-            self._show_report("\n".join(lines))
-
-        self.run_task(nexas_script.rebuild, (pac, folder, out),
-                      {"charmap": charmap, "patch_only": self.tx_patch_var.get()}, "Rebuilding", done)
-
-    # -------------------------------------------------- Pestaña Archivos PAC
-
-    def browse_pac(self):
-        path = filedialog.askopenfilename(title="Open .pac file", filetypes=PAC_TYPES)
-        if path:
-            self.load_pac(path)
-
-    def load_pac(self, path):
-        path = path.strip().strip('"')
-        if not path:
-            return
-        try:
-            with nexas_pac.Pac(path) as pac:
-                entries, pack_type = pac.entries, pac.pack
-        except Exception as e:
-            messagebox.showerror(APP_TITLE, f"Could not read the file:\n{e}")
-            return
-        self.pac_var.set(path)
-        self.entries = entries
-        p = Path(path)
-        self.raw_out_var.set(str(p.parent.parent / f"{p.parent.name}_{p.stem}"))
-        types = Counter(e.ext or '(none)' for e in entries)
-        total = sum(e.size for e in entries)
-        self.pac_info.configure(text=f"{len(entries)} files   ·   {format_size(total)}   ·   "
-                                     f"compression: {nexas_pac.PACK_NAMES[pack_type]}   ·   "
-                                     + ", ".join(f"{n} {ext}" for ext, n in types.most_common()))
-        self.type_menu.configure(values=[ALL_TYPES] + sorted(types))
-        self.type_var.set(ALL_TYPES)
-        self._refresh_tree()
-
-    def _refresh_tree(self):
-        self.tree.delete(*self.tree.get_children())
-        text = self.filter_var.get().lower()
-        ext = self.type_var.get()
-        for i, e in enumerate(self.entries):
-            if text in e.name.lower() and ext in (ALL_TYPES, e.ext or '(none)'):
-                self.tree.insert("", "end", iid=str(i), text=e.name,
-                                 values=(e.ext, format_size(e.size)))
-        self._update_selection_label()
-
-    def _update_selection_label(self):
-        if not self.entries:
-            self.sel_label.configure(text="")
-            return
-        self.sel_label.configure(text=f"{len(self.tree.get_children())} shown · "
-                                      f"{len(self.tree.selection())} selected")
-
-    def start_raw(self, only_selected):
-        pac_path = self.pac_var.get().strip()
-        out_dir = self.raw_out_var.get().strip()
-        if not self.entries:
-            messagebox.showwarning(APP_TITLE, "Open a .pac file first.")
-            return
-        if not out_dir:
-            messagebox.showwarning(APP_TITLE, "Choose an output folder.")
-            return
-        names = None
-        if only_selected:
-            names = [self.entries[int(iid)].name for iid in self.tree.selection()]
-            if not names:
-                messagebox.showwarning(APP_TITLE, "No files selected.")
-                return
-
-        def done(count):
-            if messagebox.askyesno(APP_TITLE, f"Extracted {count} files to:\n{out_dir}\n\nOpen the folder?"):
-                open_folder(out_dir)
-
-        self.run_task(nexas_pac.extract, (pac_path, out_dir), {"names": names}, "Extracting", done)
-
-    def start_pack(self):
-        folder = filedialog.askdirectory(title="Folder with the files to pack")
-        if not folder:
-            return
-        out = filedialog.asksaveasfilename(title="Save .pac", defaultextension=".pac",
-                                           initialfile=f"{Path(folder).name}.pac", filetypes=PAC_TYPES)
-        if not out:
-            return
-        like = self.pac_var.get().strip() if self.entries else None
-        if like and not messagebox.askyesno(APP_TITLE, f"Keep the order and compression of\n{Path(like).name}?"):
-            like = None
-
-        def done(count):
-            if messagebox.askyesno(APP_TITLE, f"Archive created ({count} files):\n{out}\n\nOpen the folder?"):
-                open_folder(Path(out).parent)
-
-        self.run_task(nexas_pac.pack, (folder, out), {"order_from": like}, "Packing", done)
 
     # ------------------------------------------------------------ Tareas
 
@@ -721,6 +782,13 @@ class App(ctk.CTk):
     def _report(self, i, total, name):
         # Llamado desde el hilo de trabajo: solo encolar
         self.events.put(("progress", (i, total, name)))
+
+    def _maybe_preview(self, name):
+        """Muestra el último PNG escrito, como mucho cada PREVIEW_INTERVAL segundos."""
+        if not name.lower().endswith(".png") or time.time() - self._last_preview < PREVIEW_INTERVAL:
+            return
+        self._last_preview = time.time()
+        self.pac_preview.show_file(name)
 
     def _poll_events(self):
         try:
@@ -764,8 +832,7 @@ class App(ctk.CTk):
 def main():
     ctk.set_appearance_mode("system")
     ctk.set_default_color_theme("blue")
-    app = App()
-    app.mainloop()
+    App().mainloop()
 
 
 if __name__ == '__main__':

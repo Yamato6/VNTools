@@ -42,11 +42,11 @@ pip install -r requirements.txt
 python advhd_gui.py
 ```
 
-- **Images**: pick the game folder (or a single `.arc`) and an output folder, then extract every image, with a live preview over a checkerboard to show transparency.
-- **Repack**: pick the original `.arc`, the folder with the extracted (and edited) images and the output `.arc`.
-- **Scripts**: extract the text of `Rio.arc` (one file per script) and rebuild it with your translation, with a report of the lines that grew, were cut or could not be encoded.
-- **Audio**: extract `Bgm.arc`, `Se.arc` and `Voice.arc` as `.ogg`.
-- **ARC Files**: open a `.arc`, filter its files by name or type and extract all of them or only the selected ones. "Pack folder…" packs a folder back into a `.arc`.
+- **ARC Files**: open a `.arc` and filter its files by name or type.
+  - **Preview**: selecting a file shows its images over a checkerboard (to see transparency), with their size and the name of the PNG they are extracted as. ◀ ▶ (or the arrow keys) step through the frames of an image.
+  - **Extract selected** / **Extract all**: save the selected files or the whole archive into `<output>/<archive>/`, with the images as PNG (the MSK mask applied as transparency) and the rest as is. **Extract game…** does the same for every archive of a game folder, including the audio. With **Resume**, an interrupted extraction continues where it stopped; images are processed in parallel by the chosen number of workers.
+  - **Pack**: a folder from the extraction is repacked over the open `.arc` (only the edited images are re-encoded); any other folder of `NAME.ext` files becomes a new `.arc`.
+- **Scripts**: extract the text of `Rio.arc` (one file per script) and rebuild it with your translation. The report lists the lines that grew, were cut or could not be encoded, with a filter.
 
 The default output folder is next to the game folder, never inside it: the tools only read the game files.
 

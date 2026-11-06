@@ -48,26 +48,14 @@ On Linux, build `_crilayla.so` instead (`gcc -O2 -shared -fPIC -o _crilayla.so _
 python yeti_gui.py
 ```
 
-- **Images**: pick the game's `data` folder (or a single `.cpk`) and an output folder, then extract every image, with a live preview.
-- **Repack**: pick the original `.cpk`, the folder with the extracted (and edited) images and the output `.cpk`.
-- **Scripts**: extract the text of `sn.bin` (one file per script) and rebuild it with your translation, with a report of the lines that grew, were cut or could not be encoded.
-- **Audio**: extract `bgm.cpk`, `se.cpk` and `vo.cpk` as `.hca` (and `.wav` with vgmstream).
 - **CPK Files**: open a `.cpk` and browse its files.
-  - **Preview**: selecting a file shows its textures, with their size and format and the name of the PNG they are extracted as. ◀ ▶ (or the arrow keys) step through the textures of a pak.
-  - **Extract**: save all the files or only the selected ones.
-  - **Repack folder…**: puts edited `<id>.bin` / `<id>.hca` files back into the `.cpk`.
-- **XTX**: convert a loose `.xtx` texture to PNG, with preview.
+  - **Preview**: selecting a file shows its images over a checkerboard (to see transparency), with their size and the name of the PNG they are extracted as. ◀ ▶ (or the arrow keys) step through the textures of a pak.
+  - **Extract selected** / **Extract all**: save the selected files or the whole archive into `<output>/<archive>/`, with the textures as PNG and the other files decompressed. **Extract game…** does the same for every archive of a game folder (`data`), including the audio as `.hca` (and `.wav` with vgmstream). With **Resume**, an interrupted extraction continues where it stopped; files are processed in parallel by the chosen number of workers.
+  - **Pack**: builds a new `.cpk` from the open one. A folder from the extraction re-encodes only the edited PNG files, in their original format; a folder of `<id>.bin` / `<id>.hca` files replaces those files.
+- **XTX Textures**: convert the loose `.xtx` textures of a folder (such as `font48.xtx`) to PNG, with preview, optionally one image per channel.
+- **Scripts**: extract the text of `sn.bin` (one file per script) and rebuild it with your translation. The report lists the lines that grew, were cut or could not be encoded, with a filter.
 
-The default output folder is next to `data`, never inside it: the tools only read the game files.
-
-### Standalone executable
-
-```bash
-pip install -r requirements.txt
-build_exe.bat
-```
-
-The result is `dist\Yeti_Tools_GUI.exe`, which runs without Python installed. If `gcc` is available, `_crilayla.dll` is built and bundled into the executable.
+The default output folders are next to the `data` folder, never inside it: the tools only read the game files.
 
 ## Usage
 

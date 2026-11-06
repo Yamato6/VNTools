@@ -108,16 +108,19 @@ def _save_png(path: Path, img: Image.Image) -> bytes:
 
 def extract_all(src, out_root, categories: Iterable[str] = ALL_CATEGORIES, convert: bool = True,
                 extras: bool = True, sprites: bool = False, resume: bool = False,
-                progress=None, cancel=None) -> ExtractResult:
+                names: Optional[Iterable[str]] = None, progress=None, cancel=None) -> ExtractResult:
     """
     Extrae las entradas de los .pac (src: un .pac o la carpeta del juego) en
     <out_root>/<pac>/. Con convert, los FIL se guardan como PNG. Con extras, además se
     escriben los fotogramas de los NMV (versión 4), los SPM como JSON y las tablas .dat
     como CSV (solo para consulta). Con sprites, cada SPM se compone en
     <pac>/_sprites/<nombre>_<patrón>.png. Los vídeos de la carpeta Movie se copian con
-    la categoría 'video'.
+    la categoría 'video'. names: solo esas entradas; se suman a una extracción anterior sin
+    borrar su registro.
     """
     categories = set(categories)
+    selected = set(names) if names is not None else None
+    merge = resume or selected is not None
     unknown = categories - set(CATEGORIES)
     if unknown:
         raise ValueError(f"Unknown category: {', '.join(sorted(unknown))}")
@@ -128,13 +131,14 @@ def extract_all(src, out_root, categories: Iterable[str] = ALL_CATEGORIES, conve
     for pac_path in find_pacs(src):
         try:
             with Pac(pac_path) as pac:
-                wanted = [e for e in pac.entries if category_of(e.ext) in categories]
+                wanted = [e for e in pac.entries if category_of(e.ext) in categories
+                          and (selected is None or e.name in selected)]
         except ValueError as ex:
             res.errors.append(f"{pac_path.name}: {ex}")
             continue
         if wanted:
             jobs.append((pac_path, wanted))
-    movies = find_movies(src) if 'video' in categories else []
+    movies = find_movies(src) if 'video' in categories and selected is None else []
 
     total = sum(len(w) for _, w in jobs) + len(movies)
     done_count = 0
@@ -143,10 +147,10 @@ def extract_all(src, out_root, categories: Iterable[str] = ALL_CATEGORIES, conve
         out_dir = out_root / pac_path.stem
         out_dir.mkdir(parents=True, exist_ok=True)
         prog = out_dir / PROGRESS_FILE
-        done = _read_done(prog) if resume else set()
-        if not resume:
+        done = _read_done(prog) if resume and selected is None else set()
+        if not merge:
             prog.write_text('', encoding='utf-8')
-        info = read_files_info(out_dir) if resume else {}
+        info = read_files_info(out_dir) if merge else {}
         info.setdefault('pac', pac_path.name)
         files = info.setdefault('files', {})
         try:

@@ -253,18 +253,24 @@ def _write_images_info(folder: Path, info: Dict[str, dict]):
 
 def extract_images(src, out_root, resume: bool = False, include_audio: bool = False,
                    compose: bool = True, workers: Optional[int] = None,
-                   png_level: int = DEFAULT_PNG_LEVEL, progress=None, cancel=None) -> ImagesResult:
+                   png_level: int = DEFAULT_PNG_LEVEL, names: Optional[Iterable[str]] = None,
+                   progress=None, cancel=None) -> ImagesResult:
     """
     Guarda las imágenes de los .arc como PNG en <out_root>/<arc>/<nombre>.png (RGBA si tienen
     máscara y compose=True). Las entradas que no son imágenes se guardan en crudo; el audio
     solo con include_audio. Cada nombre terminado se apunta en <arc>/_progreso.txt;
     con resume=True se saltan los ya hechos.
 
+    names: solo esos nombres (sin extensión); se suman a una extracción anterior sin borrar
+    su registro.
+
     progress recibe como nombre la ruta del último PNG escrito (o '<arc>/<nombre>').
     """
     out_root = Path(out_root)
     workers = max(1, workers or default_workers())
     result = ImagesResult()
+    wanted = set(names) if names is not None else None
+    merge = resume or wanted is not None
 
     jobs = []           # (arc_path, nombre, entradas, out_dir)
     progress_files = {}
@@ -272,18 +278,19 @@ def extract_images(src, out_root, resume: bool = False, include_audio: bool = Fa
     for arc_path in find_arcs(src, include_audio):
         groups = defaultdict(list)
         for e in read_index(arc_path):
-            if e.ext.upper() not in IGNORED_TYPES and (include_audio or e.ext.upper() != 'OGG'):
+            if e.ext.upper() not in IGNORED_TYPES and (include_audio or e.ext.upper() != 'OGG') \
+                    and (wanted is None or e.name in wanted):
                 groups[e.name].append(e)
         if not groups:
             continue
         out_dir = out_root / arc_path.stem
         out_dir.mkdir(parents=True, exist_ok=True)
         prog = out_dir / PROGRESS_FILE
-        done = _read_done(prog) if resume else set()
-        if not resume:
+        done = _read_done(prog) if resume and wanted is None else set()
+        if not merge:
             prog.write_text('', encoding='utf-8')
         progress_files[str(arc_path)] = prog
-        images_info[str(arc_path)] = read_images_info(out_dir) if resume else {}
+        images_info[str(arc_path)] = read_images_info(out_dir) if merge else {}
         for name, entries in groups.items():
             if name in done:
                 result.skipped += 1

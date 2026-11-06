@@ -43,10 +43,11 @@ pip install -r requirements.txt
 python nexas_gui.py
 ```
 
-- **Extract**: pick the game folder (or a single `.pac`) and an output folder, choose the categories and extract, with a live preview of the images.
-- **Repack**: pick the original `.pac`, the extracted folder and the output `.pac`. By default only the changed files are written, as a patch named after the first free `UpdateN.pac`.
+- **PAC Files**: open a `.pac` and filter its files by name or type.
+  - **Preview**: selecting a file shows its images over a checkerboard (to see transparency), with their size and the name of the PNG they are extracted as. ◀ ▶ (or the arrow keys) step through the frames of an NMV animation or the patterns of an SPM sprite.
+  - **Extract selected** / **Extract all**: save the selected files or the whole archive into `<output>/<archive>/`, with the FIL masks as PNG and the rest as is; **Viewing extras** also writes the NMV frames, the composed sprites and the tables as CSV. **Extract game…** does the same for every archive of a game folder, including the `Movie` folder. With **Resume**, an interrupted extraction continues where it stopped.
+  - **Pack**: a folder from the extraction is repacked over the open `.pac`. By default only the changed files are written, as a patch named after the first free `UpdateN.pac`. Any other folder becomes a new `.pac` with the order and compression of the open one.
 - **Text**: extract the text of `Script.pac` (or `Update3.pac`, `Config.pac`, `Update2.pac`) with an optional reference archive, then rebuild it with your translation, with a report of the lines that could not be encoded.
-- **PAC Files**: open a `.pac`, filter its files by name or type and extract all of them or only the selected ones. "Pack folder…" packs a folder into a `.pac`.
 
 The default output folders are next to the game folder, never inside it: the tools only read the game files.
 

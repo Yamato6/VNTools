@@ -187,12 +187,14 @@ def _process_entry(int_path: str, key: Optional[int], index: int, out_dir: str,
 
 def extract_all(src, out_root, categories: Iterable[str] = ALL_CATEGORIES, convert: bool = True,
                 resume: bool = False, phrase: Optional[str] = None, workers: Optional[int] = None,
-                png_level: int = DEFAULT_PNG_LEVEL, progress=None, cancel=None) -> ExtractResult:
+                png_level: int = DEFAULT_PNG_LEVEL, names: Optional[Iterable[str]] = None,
+                progress=None, cancel=None) -> ExtractResult:
     """
     Extrae las entradas de los .int (src: un .int o la carpeta del juego) en
     <out_root>/<int>/. Con convert, las imágenes HG-3 se guardan como PNG (NOMBRE.png, o
     NOMBRE_NN.png si tienen varios fotogramas); el resto, tal cual. phrase: frase del juego
     (si no, se busca en la carpeta del juego). Con resume, se saltan las entradas ya hechas.
+    names: solo esas entradas; se suman a una extracción anterior sin borrar su registro.
 
     progress recibe como nombre la ruta del último PNG escrito (o '<int>/<entrada>').
     """
@@ -203,6 +205,8 @@ def extract_all(src, out_root, categories: Iterable[str] = ALL_CATEGORIES, conve
     out_root = Path(out_root)
     workers = max(1, workers or default_workers())
     res = ExtractResult()
+    selected = set(names) if names is not None else None
+    merge = resume or selected is not None
 
     ints = find_ints(src)
     if not ints:
@@ -219,7 +223,8 @@ def extract_all(src, out_root, categories: Iterable[str] = ALL_CATEGORIES, conve
     for int_path in ints:
         try:
             with IntArchive(int_path, key) as arc:
-                wanted = [e for e in arc.entries if category_of(e.ext) in categories]
+                wanted = [e for e in arc.entries if category_of(e.ext) in categories
+                          and (selected is None or e.name in selected)]
         except ValueError as ex:
             res.errors.append(f"{int_path.name}: {ex}")
             continue
@@ -228,11 +233,11 @@ def extract_all(src, out_root, categories: Iterable[str] = ALL_CATEGORIES, conve
         out_dir = out_root / int_path.stem
         out_dir.mkdir(parents=True, exist_ok=True)
         prog = out_dir / PROGRESS_FILE
-        done = _read_done(prog) if resume else set()
-        if not resume:
+        done = _read_done(prog) if resume and selected is None else set()
+        if not merge:
             prog.write_text('', encoding='utf-8')
         progress_files[str(int_path)] = prog
-        info = read_files_info(out_dir) if resume else {}
+        info = read_files_info(out_dir) if merge else {}
         info['int'] = int_path.name
         info.setdefault('files', {})
         infos[str(int_path)] = info
