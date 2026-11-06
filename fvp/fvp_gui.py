@@ -54,6 +54,16 @@ def muted(widget_cls, master, **kw):
     return widget_cls(master, text_color=("gray35", "gray65"), **kw)
 
 
+def clear_image(label: ctk.CTkLabel, text: str = ""):
+    """
+    Quita la imagen de un CTkLabel. configure(image=None) no la quita del label
+    interno de Tk: este sigue apuntando a la imagen anterior, que se borra al
+    liberarse, y el siguiente configure falla con "image ... does not exist".
+    """
+    label._label.configure(image="")
+    label.configure(image=None, text=text)
+
+
 class PathRow:
     """Fila etiqueta + campo + botón de examinar."""
 
@@ -144,7 +154,7 @@ class App(ctk.CTk):
             ctk_img = ctk.CTkImage(light_image=thumb, dark_image=thumb, size=thumb.size)
             img_label.configure(image=ctk_img, text="")
         else:
-            img_label.configure(image=None, text="No preview")
+            clear_image(img_label, "No preview")
         info.configure(text=text)
         self._preview_refs[key] = (img_label, info, ctk_img)
 

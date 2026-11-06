@@ -61,6 +61,16 @@ def preview_image(img: Image.Image) -> ctk.CTkImage:
     return ctk.CTkImage(light_image=bg, dark_image=bg, size=bg.size)
 
 
+def clear_image(label: ctk.CTkLabel, text: str = ""):
+    """
+    Quita la imagen de un CTkLabel. configure(image=None) no la quita del label
+    interno de Tk: este sigue apuntando a la imagen anterior, que se borra al
+    liberarse, y el siguiente configure falla con "image ... does not exist".
+    """
+    label._label.configure(image="")
+    label.configure(image=None, text=text)
+
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -476,7 +486,7 @@ class App(ctk.CTk):
             if messagebox.askyesno(APP_TITLE, text + "\n\nOpen the folder?"):
                 open_folder(out_dir)
 
-        self.img_preview.configure(image=None, text="")
+        clear_image(self.img_preview)
         self.run_task(advhd_extract.extract_images, (src, out_dir),
                       {"resume": self.resume_var.get(), "include_audio": self.audio_var.get(),
                        "compose": not self.no_alpha_var.get(),

@@ -63,6 +63,16 @@ def preview_image(img: Image.Image) -> ctk.CTkImage:
     return ctk.CTkImage(light_image=bg, dark_image=bg, size=bg.size)
 
 
+def clear_image(label: ctk.CTkLabel, text: str = ""):
+    """
+    Quita la imagen de un CTkLabel. configure(image=None) no la quita del label
+    interno de Tk: este sigue apuntando a la imagen anterior, que se borra al
+    liberarse, y el siguiente configure falla con "image ... does not exist".
+    """
+    label._label.configure(image="")
+    label.configure(image=None, text=text)
+
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -480,7 +490,7 @@ class App(ctk.CTk):
             if messagebox.askyesno(APP_TITLE, text + "\n\nOpen the folder?"):
                 open_folder(out_dir)
 
-        self.preview.configure(image=None, text="")
+        clear_image(self.preview)
         self.run_task(nexas_extract.extract_all, (src, out_dir),
                       {"categories": cats, "convert": self.convert_var.get(), "extras": self.extras_var.get(),
                        "sprites": self.sprites_var.get(), "resume": self.resume_var.get()},
