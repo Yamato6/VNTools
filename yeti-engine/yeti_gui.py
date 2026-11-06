@@ -21,11 +21,14 @@ import yeti_extract
 import yeti_script
 from yeti_common import Cancelled
 from yeti_cpk import CPK
-from yeti_xtx import xtx_info, xtx_to_image
+from yeti_xtx import FMT_ARGB4444, FMT_ARGB8888, FMT_DXT5, is_xtx, xtx_info, xtx_to_image
 
 APP_TITLE = "Yeti Tools"
 PREVIEW_SIZE = (360, 270)
 PREVIEW_INTERVAL = 0.5      # segundos entre actualizaciones de la vista previa
+PANEL_SIZE = (300, 260)     # vista previa de la pestaña CPK Files
+PREVIEW_MAX_SIZE = 64 << 20
+FORMAT_NAMES = {FMT_ARGB8888: "ARGB8888", FMT_ARGB4444: "ARGB4444", FMT_DXT5: "DXT5"}
 
 
 def format_size(size: int) -> str:
@@ -48,6 +51,17 @@ def preview_image(img: Image.Image) -> ctk.CTkImage:
     return ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
 
 
+def checkerboard(size, cell=8) -> Image.Image:
+    """Fondo de cuadros para ver la transparencia."""
+    w, h = size
+    img = Image.new('RGBA', size, (204, 204, 204, 255))
+    dark = Image.new('RGBA', (cell, cell), (153, 153, 153, 255))
+    for y in range(0, h, cell):
+        for x in range((y // cell) % 2 * cell, w, cell * 2):
+            img.paste(dark, (x, y))
+    return img
+
+
 def clear_image(label: ctk.CTkLabel, text: str = ""):
     """
     Quita la imagen de un CTkLabel. configure(image=None) no la quita del label
@@ -62,8 +76,8 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("880x640")
-        self.minsize(700, 520)
+        self.geometry("1000x720")
+        self.minsize(820, 600)
 
         self.events = queue.Queue()
         self.cancel_event = threading.Event()
@@ -72,6 +86,7 @@ class App(ctk.CTk):
 
         # Estado de la pestaña Archivos CPK
         self.entries = []           # lista de yeti_cpk.Entry
+        self._cpk = None            # el .cpk abierto en esa pestaña (para la vista previa)
         # Estado de la pestaña Imágenes
         self._last_preview = 0.0
 
@@ -314,8 +329,12 @@ class App(ctk.CTk):
                                      text_color=("gray35", "gray65"))
         self.cpk_info.grid(row=1, column=0, columnspan=3, sticky="ew", padx=4)
 
-        tree_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        tree_frame.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=4, pady=4)
+        body = ctk.CTkFrame(tab, fg_color="transparent")
+        body.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=4, pady=4)
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_rowconfigure(0, weight=1)
+        tree_frame = ctk.CTkFrame(body, fg_color="transparent")
+        tree_frame.grid(row=0, column=0, sticky="nsew")
         tree_frame.grid_columnconfigure(0, weight=1)
         tree_frame.grid_rowconfigure(0, weight=1)
 
@@ -325,15 +344,19 @@ class App(ctk.CTk):
         self.tree.heading("size", text="Size", anchor="e")
         self.tree.heading("real", text="Uncompressed", anchor="e")
         self.tree.heading("comp", text="Compression", anchor="w")
-        self.tree.column("#0", stretch=True, width=240)
-        self.tree.column("size", stretch=False, width=110, anchor="e")
-        self.tree.column("real", stretch=False, width=120, anchor="e")
-        self.tree.column("comp", stretch=False, width=110, anchor="w")
+        self.tree.column("#0", stretch=True, width=180)
+        self.tree.column("size", stretch=False, width=85, anchor="e")
+        self.tree.column("real", stretch=False, width=100, anchor="e")
+        self.tree.column("comp", stretch=False, width=85, anchor="w")
         self.tree.grid(row=0, column=0, sticky="nsew")
         scroll = ctk.CTkScrollbar(tree_frame, command=self.tree.yview)
         scroll.grid(row=0, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=scroll.set)
-        self.tree.bind("<<TreeviewSelect>>", lambda _e: self._update_selection_label())
+        self.tree.bind("<<TreeviewSelect>>", lambda _e: self._on_tree_select())
+        # ← → cambian de imagen dentro del archivo en la vista previa
+        self.tree.bind("<Left>", lambda _e: (self._step_image(-1), "break")[1])
+        self.tree.bind("<Right>", lambda _e: (self._step_image(1), "break")[1])
+        self._build_preview(body).grid(row=0, column=1, sticky="ns", padx=(8, 0))
 
         self.raw_out_var = tk.StringVar()
         ctk.CTkLabel(tab, text="Output:").grid(row=3, column=0, sticky="w", padx=(4, 8), pady=4)
@@ -344,8 +367,12 @@ class App(ctk.CTk):
 
         actions = ctk.CTkFrame(tab, fg_color="transparent")
         actions.grid(row=4, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
+        self.raw_png_var = tk.BooleanVar(value=True)
+        cb = ctk.CTkCheckBox(actions, text="XTX as PNG", variable=self.raw_png_var)
+        cb.pack(side="left")
+        self.busy_widgets.append(cb)
         self.sel_label = ctk.CTkLabel(actions, text="", text_color=("gray35", "gray65"))
-        self.sel_label.pack(side="left")
+        self.sel_label.pack(side="left", padx=12)
         btn_all = ctk.CTkButton(actions, text="Extract all", command=lambda: self.start_raw(False))
         btn_all.pack(side="right")
         btn_sel = ctk.CTkButton(actions, text="Extract selected",
@@ -356,8 +383,9 @@ class App(ctk.CTk):
         btn_pack.pack(side="right", padx=(0, 8))
         self.busy_widgets += [btn_all, btn_sel, btn_pack]
 
-        ctk.CTkLabel(tab, text="Files are saved already decompressed (no CRILAYLA or LZSS), "
-                               "as <id>.bin.", anchor="w", text_color=("gray35", "gray65")) \
+        ctk.CTkLabel(tab, text="Files are saved decompressed as <id>.bin; with \"XTX as PNG\", textures "
+                               "become <id>_<n>.png as in the Images tab.", anchor="w",
+                     text_color=("gray35", "gray65")) \
             .grid(row=5, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
 
     def _build_xtx_tab(self, tab):
@@ -395,6 +423,52 @@ class App(ctk.CTk):
 
         self.xtx_preview = ctk.CTkLabel(tab, text="")
         self.xtx_preview.grid(row=4, column=0, columnspan=3, sticky="nsew", pady=8)
+
+        # Archivos <id>.bin sacados antes de un .cpk (pestaña CPK Files)
+        bins = ctk.CTkFrame(tab)
+        bins.grid(row=5, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
+        bins.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(bins, text="Extracted .bin files", font=ctk.CTkFont(weight="bold")) \
+            .grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(6, 0))
+        self.bins_in_var = tk.StringVar()
+        self.bins_out_var = tk.StringVar()
+        self._path_row(bins, 1, "Folder:", self.bins_in_var, self._browse_bins_in)
+        self._path_row(bins, 2, "Output:", self.bins_out_var,
+                       lambda: self._ask_dir(self.bins_out_var, "Output folder for the PNG files"))
+        row = ctk.CTkFrame(bins, fg_color="transparent")
+        row.grid(row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=(0, 8))
+        ctk.CTkLabel(row, text="Converts the textures of <id>.bin files saved from the CPK Files tab, "
+                               "with the same names as the Images tab.",
+                     text_color=("gray35", "gray65")).pack(side="left", padx=4)
+        btn = ctk.CTkButton(row, text="Convert .bin", width=120, command=self.start_bins)
+        btn.pack(side="right")
+        self.busy_widgets.append(btn)
+
+    def _browse_bins_in(self):
+        path = filedialog.askdirectory(title="Folder with the extracted .bin files")
+        if path:
+            self.bins_in_var.set(path)
+            if not self.bins_out_var.get():
+                self.bins_out_var.set(str(Path(path).parent / f"{Path(path).name}_png"))
+
+    def start_bins(self):
+        src, out_dir = self.bins_in_var.get().strip(), self.bins_out_var.get().strip()
+        if not src or not Path(src).exists():
+            messagebox.showwarning(APP_TITLE, "Choose the folder with the .bin files.")
+            return
+        if not out_dir:
+            messagebox.showwarning(APP_TITLE, "Choose an output folder.")
+            return
+
+        def done(r):
+            text = (f"{r.images} images from {r.files} .bin files in:\n{out_dir}\n\n"
+                    f"{r.without} files have no textures (sounds, scripts, data).")
+            if r.errors:
+                text += f"\n\n{len(r.errors)} errors:\n" + "\n".join(r.errors[:10])
+            if messagebox.askyesno(APP_TITLE, text + "\n\nOpen the folder?"):
+                open_folder(out_dir)
+
+        self.run_task(yeti_extract.bins_to_png, (src, out_dir), {}, "Converting", done)
 
     def _build_status_bar(self):
         bar = ctk.CTkFrame(self)
@@ -529,11 +603,14 @@ class App(ctk.CTk):
         if not path:
             return
         try:
-            with CPK(path) as cpk:
-                entries, mode = cpk.entries, cpk.mode
+            cpk = CPK(path)
         except Exception as e:
             messagebox.showerror(APP_TITLE, f"Could not read the file:\n{e}")
             return
+        if self._cpk is not None:
+            self._cpk.close()
+        self._cpk = cpk             # abierto mientras se muestra, para la vista previa
+        entries, mode = cpk.entries, cpk.mode
         self.cpk_var.set(path)
         self.entries = entries
         p = Path(path)
@@ -549,6 +626,104 @@ class App(ctk.CTk):
                              values=(format_size(e.size), format_size(e.extract_size),
                                      "CRILAYLA" if e.compressed else ""))
         self._update_selection_label()
+        self._pv_images = []
+        self._set_preview(None, "")
+
+    def _build_preview(self, master):
+        """Panel de vista previa: imagen, imágenes del archivo (◀ ▶) e información."""
+        frame = ctk.CTkFrame(master, width=PANEL_SIZE[0] + 20)
+        frame.grid_propagate(False)
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_rowconfigure(0, weight=1)
+        self.pv_image = ctk.CTkLabel(frame, text="No preview")
+        self.pv_image.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 4))
+
+        nav = ctk.CTkFrame(frame, fg_color="transparent")
+        nav.grid(row=1, column=0, sticky="ew", padx=10)
+        nav.grid_columnconfigure(1, weight=1)
+        self.pv_prev = ctk.CTkButton(nav, text="◀", width=36, command=lambda: self._step_image(-1))
+        self.pv_prev.grid(row=0, column=0)
+        self.pv_count = ctk.CTkLabel(nav, text="")
+        self.pv_count.grid(row=0, column=1)
+        self.pv_next = ctk.CTkButton(nav, text="▶", width=36, command=lambda: self._step_image(1))
+        self.pv_next.grid(row=0, column=2)
+
+        self.pv_info = ctk.CTkLabel(frame, text="", justify="left", anchor="w")
+        self.pv_info.grid(row=2, column=0, sticky="ew", padx=10, pady=(6, 10))
+        self._pv_images = []        # [(nombre de la hoja, datos XTX)] del archivo seleccionado
+        self._pv_index = 0
+        self._pv_header = ''
+        self._pv_ref = None         # CTkImage mostrada (para que no se libere)
+        self._set_nav(0)
+        return frame
+
+    def _on_tree_select(self):
+        self._update_selection_label()
+        sel = self.tree.selection()
+        if len(sel) == 1:
+            self._show_entry(self.entries[int(sel[0])])
+
+    def _show_entry(self, e):
+        self._pv_images, self._pv_index = [], 0
+        self._pv_header = f"{e.path}\n{format_size(e.extract_size)}" + (" (CRILAYLA)" if e.compressed else "")
+        if e.extract_size > PREVIEW_MAX_SIZE:
+            self._set_preview(None, self._pv_header)
+            return
+        try:
+            data, lzss = yeti_extract.unpack_info(self._cpk, e)
+            if lzss:
+                self._pv_header += " (LZSS)"
+            # Las texturas se decodifican al mostrarlas: un pak puede llevar muchas
+            self._pv_images = [(name, blob) for name, blob in yeti_extract.leaves(e, data) if is_xtx(blob)]
+        except Exception as ex:
+            self._set_preview(None, f"{self._pv_header}\n\nCould not read it:\n{ex}")
+            return
+        if not self._pv_images:
+            self._set_preview(None, f"{self._pv_header}\nNo images")
+            return
+        self._render_preview()
+
+    def _render_preview(self):
+        name, blob = self._pv_images[self._pv_index]
+        count = len(self._pv_images)
+        self.pv_count.configure(text=f"Image {self._pv_index + 1} / {count}")
+        self._set_nav(count)
+        try:
+            fmt, w, h = xtx_info(blob)
+            img = xtx_to_image(blob)
+        except Exception as ex:
+            self._set_preview(None, f"{self._pv_header}\n\nCould not show it:\n{ex}", keep_nav=True)
+            return
+        lines = [self._pv_header, f"{w}×{h}, {FORMAT_NAMES.get(fmt, f'format {fmt}')}",
+                 f"Saved as {name}.png"]
+        self._set_preview(img, "\n".join(lines), keep_nav=True)
+
+    def _step_image(self, delta):
+        if self._pv_images:
+            self._pv_index = (self._pv_index + delta) % len(self._pv_images)
+            self._render_preview()
+
+    def _set_nav(self, count):
+        state = "normal" if count > 1 else "disabled"
+        self.pv_prev.configure(state=state)
+        self.pv_next.configure(state=state)
+        if not count:
+            self.pv_count.configure(text="")
+
+    def _set_preview(self, img, text, keep_nav=False):
+        if img is None:
+            self._pv_ref = None
+            clear_image(self.pv_image, "No preview")
+            if not keep_nav:
+                self._set_nav(0)
+        else:
+            img = img.convert('RGBA')
+            img.thumbnail(PANEL_SIZE)
+            bg = checkerboard(img.size)
+            bg.alpha_composite(img)
+            self._pv_ref = ctk.CTkImage(light_image=bg, dark_image=bg, size=bg.size)
+            self.pv_image.configure(image=self._pv_ref, text="")
+        self.pv_info.configure(text=text)
 
     def _update_selection_label(self):
         if not self.entries:
@@ -579,11 +754,12 @@ class App(ctk.CTk):
                 return
 
         def done(count):
-            if messagebox.askyesno(APP_TITLE, f"Extracted {count} files to:\n{out_dir}\n\n"
+            if messagebox.askyesno(APP_TITLE, f"Saved {count} files to:\n{out_dir}\n\n"
                                               "Open the folder?"):
                 open_folder(out_dir)
 
-        self.run_task(yeti_extract.extract_raw, (cpk_path, out_dir), {"ids": ids}, "Extracting", done)
+        self.run_task(yeti_extract.extract_raw, (cpk_path, out_dir),
+                      {"ids": ids, "png": self.raw_png_var.get()}, "Extracting", done)
 
     # ----------------------------------------------------------- Pestaña XTX
 

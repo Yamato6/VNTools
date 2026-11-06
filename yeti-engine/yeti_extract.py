@@ -23,7 +23,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from PIL import Image
 
 from yeti_codecs import compress_yeti_lzss, decompress_yeti_lzss
-from yeti_common import atomic_write, check_cancel, report
+from yeti_common import Cancelled, atomic_write, check_cancel, report
 from yeti_cpk import CPK, Entry, write_cpk
 from yeti_xtx import (image_to_xtx, is_pak, is_xtx, pak_entries, replace_leaves, walk_pak,
                       xtx_to_image)
@@ -92,10 +92,16 @@ def find_cpks(src, audio: bool = False) -> List[Path]:
 # Archivos crudos
 # =============================================================================
 
-def extract_raw(cpk_path, out_dir, ids: Optional[Iterable[int]] = None,
-                progress=None, cancel=None) -> int:
-    """Guarda cada archivo del .cpk ya descomprimido como <id>.bin. Devuelve la cantidad."""
+def extract_raw(cpk_path, out_dir, ids: Optional[Iterable[int]] = None, png: bool = False,
+                png_level: int = DEFAULT_PNG_LEVEL, progress=None, cancel=None) -> int:
+    """
+    Guarda cada archivo del .cpk ya descomprimido como <id>.bin. Con png, las texturas XTX
+    (sueltas o dentro de un pak) se guardan como PNG con los mismos nombres que la
+    extracción de imágenes (<id>.png, <id>_<entrada>.png…) y el resto de cada pak como
+    <id>_<entrada>.bin. Devuelve la cantidad de archivos escritos.
+    """
     out_dir = Path(out_dir)
+    written = 0
     with CPK(cpk_path) as cpk:
         entries = cpk.entries
         if ids is not None:
@@ -104,12 +110,30 @@ def extract_raw(cpk_path, out_dir, ids: Optional[Iterable[int]] = None,
         total = len(entries)
         for i, e in enumerate(entries):
             check_cancel(cancel)
-            report(progress, i, total, e.path)
             data = unpack(cpk, e)
-            with atomic_write(out_dir / e.path) as f:
-                f.write(data)
+            parts = list(leaves(e, data)) if png else []
+            if not any(is_xtx(blob) for _name, blob in parts):
+                report(progress, i, total, e.path)
+                with atomic_write(out_dir / e.path) as f:
+                    f.write(data)
+                written += 1
+                continue
+            last = ''
+            for name, blob in parts:
+                check_cancel(cancel)
+                if is_xtx(blob):
+                    buf = io.BytesIO()
+                    xtx_to_image(blob).save(buf, format='PNG', compress_level=png_level)
+                    last = str(out_dir / f"{name}.png")
+                    with atomic_write(last) as f:
+                        f.write(buf.getvalue())
+                else:
+                    with atomic_write(out_dir / f"{name}.bin") as f:
+                        f.write(blob)
+                written += 1
+            report(progress, i, total, last)
     report(progress, total, total)
-    return total
+    return written
 
 
 # =============================================================================
@@ -423,6 +447,64 @@ def xtx_file_to_png(xtx_path, png_path, split: bool = False, png_level: int = 6)
         with atomic_write(path) as f:
             im.save(f, format='PNG', compress_level=png_level)
     return [path for path, _ in outputs]
+
+
+@dataclass
+class BinsResult:
+    files: int = 0              # .bin leídos
+    images: int = 0             # PNG escritos
+    without: int = 0            # .bin sin texturas
+    errors: List[str] = field(default_factory=list)
+    last_png: str = ''
+
+
+def bins_to_png(src, out_dir, png_level: int = DEFAULT_PNG_LEVEL, progress=None, cancel=None) -> BinsResult:
+    """
+    Convierte a PNG las texturas de archivos <id>.bin ya extraídos de un .cpk (src: un .bin
+    o una carpeta). Cada .bin puede ser un XTX, un pak de texturas o venir con el LZSS de
+    Yeti; los PNG llevan los mismos nombres que la extracción de imágenes
+    (<id>.png, <id>_<entrada>.png…). Los .bin sin texturas se cuentan y se dejan.
+    """
+    src, out_dir = Path(src), Path(out_dir)
+    files = [src] if src.is_file() else sorted(p for p in src.iterdir()
+                                              if p.is_file() and p.suffix.lower() == '.bin')
+    res = BinsResult()
+    total = len(files)
+    for i, path in enumerate(files):
+        check_cancel(cancel)
+        report(progress, i, total, res.last_png or path.name)
+        try:
+            data = path.read_bytes()
+            if not (is_xtx(data) or is_pak(data)) and len(data) >= 5:
+                try:                # quizá se guardó con el LZSS de Yeti
+                    out = decompress_yeti_lzss(data)
+                    if is_xtx(out) or is_pak(out):
+                        data = out
+                except (IndexError, struct.error, ValueError):
+                    pass
+            parts = walk_pak(data, f"{path.stem}_") if is_pak(data) and not is_xtx(data) \
+                else [(path.stem, data)]
+            found = 0
+            for name, blob in parts:
+                if is_xtx(blob):
+                    check_cancel(cancel)
+                    buf = io.BytesIO()
+                    xtx_to_image(blob).save(buf, format='PNG', compress_level=png_level)
+                    dest = out_dir / f"{name}.png"
+                    with atomic_write(dest) as f:
+                        f.write(buf.getvalue())
+                    res.last_png = str(dest)
+                    found += 1
+            res.images += found
+            res.files += 1
+            if not found:
+                res.without += 1
+        except Cancelled:
+            raise
+        except Exception as ex:
+            res.errors.append(f"{path.name}: {ex}")
+    report(progress, total, total, res.last_png)
+    return res
 
 
 # =============================================================================

@@ -18,7 +18,7 @@ from yeti_cpk import CPK
 
 
 def print_progress(i, total, name):
-    if name:
+    if name and i < total:
         print(f" [{i + 1}/{total}] {name}")
 
 
@@ -30,10 +30,18 @@ def cmd_list(cpk_path: str):
         print(f"Total: {sum(e.size for e in cpk.entries)} bytes")
 
 
-def cmd_extract(cpk_path: str, out_dir: str):
+def cmd_extract(cpk_path: str, out_dir: str, png: bool):
     print(f"Extracting from {cpk_path}...")
-    count = yeti_extract.extract_raw(cpk_path, out_dir, progress=print_progress)
+    count = yeti_extract.extract_raw(cpk_path, out_dir, png=png, progress=print_progress)
     print(f"Extraction complete: {count} files in {out_dir}")
+
+
+def cmd_bin_png(src: str, out_dir: str):
+    r = yeti_extract.bins_to_png(src, out_dir, progress=print_progress)
+    for err in r.errors:
+        print(f" ! {err}")
+    print(f"{r.images} images from {r.files} .bin files in {out_dir} "
+          f"({r.without} without textures, {len(r.errors)} errors)")
 
 
 def cmd_images(src: str, out_dir: str, resume: bool, workers, png_level: int):
@@ -113,11 +121,12 @@ def usage():
     print("Usage:")
     print("  python yeti_tool.py                          (opens the graphical interface)")
     print("  python yeti_tool.py list    <file.cpk>")
-    print("  python yeti_tool.py extract <file.cpk> <output_folder>")
+    print("  python yeti_tool.py extract <file.cpk> <output_folder> [--png]")
     print("  python yeti_tool.py images  <file.cpk|data_folder> <output_folder>")
     print("                              [--resume] [--workers N] [--png-level N]")
     print("  python yeti_tool.py audio   <data_folder|file.cpk> <output_folder> [--no-wav]")
     print("  python yeti_tool.py xtx     <file.xtx> <output.png> [--split]")
+    print("  python yeti_tool.py bin-png <file.bin|folder> <output_folder>   (.bin files saved by 'extract')")
     print()
     print("Repacking:")
     print("  python yeti_tool.py images-pack <original.cpk> <images_folder> <output.cpk>")
@@ -126,6 +135,9 @@ def usage():
     print("Scripts (sn.bin):")
     print("  python yeti_tool.py script-strings <sn.bin> <text_folder> [--listing] [--charmap <map.txt> --reverse]")
     print("  python yeti_tool.py script-rebuild <sn.bin> <text_folder> <new_sn.bin> [--charmap <map.txt>] [--fixed]")
+    print()
+    print("'extract' options:")
+    print("  --png          save the XTX textures as PNG (<id>_<n>.png, as 'images' does)")
     print()
     print("'images' options:")
     print("  --resume       continue where the last run stopped (_progreso.txt)")
@@ -206,8 +218,10 @@ def main():
     try:
         if cmd == 'list' and len(args) == 1:
             cmd_list(args[0])
+        elif cmd == 'bin-png' and len(args) == 2:
+            cmd_bin_png(args[0], args[1])
         elif cmd == 'extract' and len(args) == 2:
-            cmd_extract(args[0], args[1])
+            cmd_extract(args[0], args[1], '--png' in opts)
         elif cmd == 'images' and len(args) == 2:
             workers = get_option(opts, '--workers')
             cmd_images(args[0], args[1], '--resume' in opts,

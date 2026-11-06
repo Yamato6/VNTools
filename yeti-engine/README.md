@@ -52,7 +52,10 @@ python yeti_gui.py
 - **Repack**: pick the original `.cpk`, the folder with the extracted (and edited) images and the output `.cpk`.
 - **Scripts**: extract the text of `sn.bin` (one file per script) and rebuild it with your translation, with a report of the lines that grew, were cut or could not be encoded.
 - **Audio**: extract `bgm.cpk`, `se.cpk` and `vo.cpk` as `.hca` (and `.wav` with vgmstream).
-- **CPK Files**: open a `.cpk`, browse its files and extract all of them or only the selected ones. "Repack folder…" puts edited `<id>.bin` / `<id>.hca` files back into it.
+- **CPK Files**: open a `.cpk` and browse its files.
+  - **Preview**: selecting a file shows its textures, with their size and format and the name of the PNG they are extracted as. ◀ ▶ (or the arrow keys) step through the textures of a pak.
+  - **Extract**: save all the files or only the selected ones.
+  - **Repack folder…**: puts edited `<id>.bin` / `<id>.hca` files back into the `.cpk`.
 - **XTX**: convert a loose `.xtx` texture to PNG, with preview.
 
 The default output folder is next to `data`, never inside it: the tools only read the game files.
@@ -77,10 +80,23 @@ python yeti_tool.py list <file.cpk>
 ### Extract raw files
 
 ```bash
-python yeti_tool.py extract <file.cpk> <output_folder>
+python yeti_tool.py extract <file.cpk> <output_folder> [--png]
 ```
 
 Every file is saved as `<id>.bin`, already decompressed. The archives have no file names, only numeric IDs.
+
+With `--png` ("XTX as PNG" in the CPK Files tab), files that contain textures are converted instead:
+- Each texture becomes `<id>.png` or `<id>_<n>.png`, with the same names as `images`.
+- The other parts of the same pak are saved as `<id>_<n>.bin`.
+- Files without textures are still saved as `<id>.bin`.
+
+`.bin` files saved without `--png` can be converted later. The command below does it, and so does the "Extracted .bin files" section of the XTX tab:
+
+```bash
+python yeti_tool.py bin-png <file.bin|folder> <output_folder>
+```
+
+To repack edited images, extract them with `images` (or the Images tab), which also writes the record that `images-pack` needs.
 
 ### Extract all images
 
