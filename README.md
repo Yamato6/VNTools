@@ -9,6 +9,7 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 | [**Yeti Tools**](yeti-engine/) | Yeti/Regista | CROSS†CHANNEL -Final Complete- (PC) | `.cpk` archives, `.xtx` textures, `sn.bin` scripts, audio |
 | [**AdvHD Tools**](advhd-engine/) | AdvHD (WillPlus) | CROSS†CHANNEL (WillPlus edition, 2012) | `.arc` archives, WIPF images, `.wsc` scripts, audio |
 | [**NeXAS Tools**](nexas-engine/) | NeXAS (Giga) | Maji de Watashi ni Koi Shinasai! S | `.pac` archives, `.bin` scripts, `.dat` tables, images, audio, video |
+| [**CatSystem2 Tools**](cs2-engine/) | CatSystem2 | Grisaia no Kajitsu, Grisaia no Meikyuu, Grisaia no Rakuen | encrypted `.int` archives, HG-3 images, `.cst` scripts, audio, video |
 
 ## Features
 
@@ -47,15 +48,21 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 - **Repack the edited files** (only the changed ones are re-encoded), into a full `.pac` or a small `UpdateN.pac` patch that the game loads on top of its own files
 - Convert FIL masks to PNG and back, NMV animations to PNG frames, and compose the character sprites (SPM)
 
+**CatSystem2 Tools** (`cs2-engine/`)
+- Open the encrypted `.int` archives: the game passphrase is read from the game's `.exe`
+- Extract everything in the game in one step and resume an interrupted extraction. HG-3 images become PNG with transparency, one PNG per frame
+- Extract the script text and rebuild it with your translation. **Translated lines can be any length**: the scripts refer to their lines by number. Each spoken line comes with its voice file
+- **Repack the edited files**: only the changed ones are re-encoded, and the archive keeps the original encryption. Repacking an unchanged folder gives an archive identical to the original
+
 ## Quick start
 
 Requires Python 3.8 or newer.
 
 ```bash
 git clone https://github.com/Yamato6/VNTools.git
-cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine, nexas-engine
+cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine, nexas-engine, cs2-engine
 pip install -r requirements.txt
-python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py, nexas_gui.py
+python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py, nexas_gui.py, cs2_gui.py
 ```
 
 Running the command line tool without arguments also opens the GUI:
@@ -71,6 +78,7 @@ See each tool's README for every command and the file format documentation:
 - [yeti-engine/README.md](yeti-engine/README.md)
 - [advhd-engine/README.md](advhd-engine/README.md)
 - [nexas-engine/README.md](nexas-engine/README.md)
+- [cs2-engine/README.md](cs2-engine/README.md)
 
 ## Standalone executable
 
@@ -88,6 +96,17 @@ VNTools/
 │   ├── advhd_common.py     shared helpers
 │   ├── advhd_tool.py       command line
 │   ├── advhd_gui.py        graphical interface
+│   └── build_exe.bat
+├── cs2-engine/           CatSystem2 Tools
+│   ├── cs2_int.py          .int archives
+│   ├── cs2_crypto.py       passphrase, Blowfish and Mersenne Twister
+│   ├── cs2_hg3.py          HG-3 images
+│   ├── cs2_script.py       CST scripts
+│   ├── cs2_extract.py      full extraction and repacking
+│   ├── _cs2.c              native Blowfish and HG-3 code
+│   ├── cs2_common.py       shared helpers
+│   ├── cs2_tool.py         command line
+│   ├── cs2_gui.py          graphical interface
 │   └── build_exe.bat
 ├── fs-engine/            CrossChannel MultiTool
 │   ├── pd_core.py          .pd format logic
@@ -133,7 +152,7 @@ VNTools/
 - HCB format research: binaryfail, akerou (original C++ tool)
 - WillPlus format reference: [vn-tools/arc_unpacker](https://github.com/vn-tools/arc_unpacker)
 - CPK and Yeti format references: see [yeti-engine/README.md](yeti-engine/README.md#credits)
-- NeXAS PAC format reference: [morkt/GARbro](https://github.com/morkt/GARbro)
+- NeXAS PAC, CatSystem2 INT and HG-3 format reference: [morkt/GARbro](https://github.com/morkt/GARbro)
 
 ## License
 
