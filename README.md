@@ -10,6 +10,7 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 | [**AdvHD Tools**](advhd-engine/) | AdvHD (WillPlus) | CROSS†CHANNEL (WillPlus edition, 2012) | `.arc` archives, WIPF images, `.wsc` scripts, audio |
 | [**NeXAS Tools**](nexas-engine/) | NeXAS (Giga) | Maji de Watashi ni Koi Shinasai! S | `.pac` archives, `.bin` scripts, `.dat` tables, images, audio, video |
 | [**CatSystem2 Tools**](cs2-engine/) | CatSystem2 | Grisaia no Kajitsu, Grisaia no Meikyuu, Grisaia no Rakuen | encrypted `.int` archives, HG-3 images, `.cst` scripts, audio, video |
+| [**BGI Tools**](bgi-engine/) | BGI / Ethornell | Daitoshokan no Hitsujikai, Koi to Senkyo to Chocolate HR | `.arc` archives, CompressedBG images, scripts, audio, video |
 
 ## Features
 
@@ -54,15 +55,21 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 - Extract the script text and rebuild it with your translation. **Translated lines can be any length**: the scripts refer to their lines by number. Each spoken line comes with its voice file
 - **Repack the edited files**: only the changed ones are re-encoded, and the archive keeps the original encryption. Repacking an unchanged folder gives an archive identical to the original
 
+**BGI Tools** (`bgi-engine/`)
+- Browse a `.arc` archive with image preview, and extract everything in the game in one step, resuming an interrupted extraction. CompressedBG images become PNG with transparency and the audio `.ogg`
+- Loose files in the game folder (such as those of a fan patch) are extracted separately
+- Extract the script text and rebuild it with your translation. **Translated lines can be any length**. Each line can carry the text of another language (for example the English patch) as a reference
+- **Repack the edited files**: only the changed ones are re-encoded; edited PNGs and `.ogg` files go back into the archive
+
 ## Quick start
 
 Requires Python 3.8 or newer.
 
 ```bash
 git clone https://github.com/Yamato6/VNTools.git
-cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine, nexas-engine, cs2-engine
+cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine, nexas-engine, cs2-engine, bgi-engine
 pip install -r requirements.txt
-python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py, nexas_gui.py, cs2_gui.py
+python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py, nexas_gui.py, cs2_gui.py, bgi_gui.py
 ```
 
 Running the command line tool without arguments also opens the GUI:
@@ -79,6 +86,7 @@ See each tool's README for every command and the file format documentation:
 - [advhd-engine/README.md](advhd-engine/README.md)
 - [nexas-engine/README.md](nexas-engine/README.md)
 - [cs2-engine/README.md](cs2-engine/README.md)
+- [bgi-engine/README.md](bgi-engine/README.md)
 
 ## Standalone executable
 
@@ -96,6 +104,18 @@ VNTools/
 │   ├── advhd_common.py     shared helpers
 │   ├── advhd_tool.py       command line
 │   ├── advhd_gui.py        graphical interface
+│   └── build_exe.bat
+├── bgi-engine/           BGI Tools
+│   ├── bgi_arc.py          .arc archives
+│   ├── bgi_codecs.py       key generator and DSC compression
+│   ├── bgi_image.py        CompressedBG and BGI images
+│   ├── bgi_audio.py        bw audio
+│   ├── bgi_script.py       compiled scripts
+│   ├── bgi_extract.py      full extraction and repacking
+│   ├── _bgi.c              native CompressedBG decoding
+│   ├── bgi_common.py       shared helpers
+│   ├── bgi_tool.py         command line
+│   ├── bgi_gui.py          graphical interface
 │   └── build_exe.bat
 ├── cs2-engine/           CatSystem2 Tools
 │   ├── cs2_int.py          .int archives
@@ -152,7 +172,7 @@ VNTools/
 - HCB format research: binaryfail, akerou (original C++ tool)
 - WillPlus format reference: [vn-tools/arc_unpacker](https://github.com/vn-tools/arc_unpacker)
 - CPK and Yeti format references: see [yeti-engine/README.md](yeti-engine/README.md#credits)
-- NeXAS PAC, CatSystem2 INT and HG-3 format reference: [morkt/GARbro](https://github.com/morkt/GARbro)
+- NeXAS PAC, CatSystem2 INT, HG-3 and BGI format reference: [morkt/GARbro](https://github.com/morkt/GARbro)
 
 ## License
 
