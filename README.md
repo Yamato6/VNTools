@@ -11,6 +11,7 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 | [**NeXAS Tools**](nexas-engine/) | NeXAS (Giga) | Maji de Watashi ni Koi Shinasai! S | `.pac` archives, `.bin` scripts, `.dat` tables, images, audio, video |
 | [**CatSystem2 Tools**](cs2-engine/) | CatSystem2 | Grisaia no Kajitsu, Grisaia no Meikyuu, Grisaia no Rakuen | encrypted `.int` archives, HG-3 images, `.cst` scripts, audio, video |
 | [**BGI Tools**](bgi-engine/) | BGI / Ethornell | Daitoshokan no Hitsujikai, Koi to Senkyo to Chocolate HR | `.arc` archives, CompressedBG images, scripts, audio, video |
+| [**KiriKiri Tools**](krkr-engine/) | KiriKiri 2 (KAG / KAGEX) | Noble Works | `.xp3` archives, TLG images, layered sprites, scene databases, PSB |
 
 ## Features
 
@@ -61,15 +62,21 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 - Extract the script text and rebuild it with your translation. **Translated lines can be any length**. Each line can carry the text of another language (for example the English patch) as a reference
 - **Repack the edited files**: only the changed ones are re-encoded; edited PNGs and `.ogg` files go back into the archive
 
+**KiriKiri Tools** (`krkr-engine/`)
+- Browse a `.xp3` archive with image preview, and extract everything in the game in one step, resuming an interrupted extraction. TLG images become PNG and PSB files readable JSON
+- Compose the layered character sprites (each outfit with each face), in the preview and as PNG
+- Extract the text of the scene databases (lines, names, choices, scene titles) with the voice file of each line, and the text under a translation patch as a reference. **Translated lines can be any length**
+- **Make a patch** (`patch4.xp3`) with the edited files and the translated text, which the game loads on top of its own files: the original archives are never touched
+
 ## Quick start
 
-Requires Python 3.8 or newer.
+Requires Python 3.8 or newer (3.11 or newer for KiriKiri Tools).
 
 ```bash
 git clone https://github.com/Yamato6/VNTools.git
-cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine, nexas-engine, cs2-engine, bgi-engine
+cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine, nexas-engine, cs2-engine, bgi-engine, krkr-engine
 pip install -r requirements.txt
-python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py, nexas_gui.py, cs2_gui.py, bgi_gui.py
+python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py, nexas_gui.py, cs2_gui.py, bgi_gui.py, krkr_gui.py
 ```
 
 Running the command line tool without arguments also opens the GUI:
@@ -87,6 +94,7 @@ See each tool's README for every command and the file format documentation:
 - [nexas-engine/README.md](nexas-engine/README.md)
 - [cs2-engine/README.md](cs2-engine/README.md)
 - [bgi-engine/README.md](bgi-engine/README.md)
+- [krkr-engine/README.md](krkr-engine/README.md)
 
 ## Standalone executable
 
@@ -107,7 +115,7 @@ VNTools/
 │   └── build_exe.bat
 ├── bgi-engine/           BGI Tools
 │   ├── bgi_arc.py          .arc archives
-│   ├── bgi_codecs.py       key generator and DSC compression
+│   ├── bgi_codecs.py       key generator, DSC compression and BSE encryption
 │   ├── bgi_image.py        CompressedBG and BGI images
 │   ├── bgi_audio.py        bw audio
 │   ├── bgi_script.py       compiled scripts
@@ -143,6 +151,18 @@ VNTools/
 │   ├── fvp_gui.py          graphical interface
 │   ├── charmap_es.txt      character table template
 │   └── build_exe.bat
+├── krkr-engine/          KiriKiri Tools
+│   ├── krkr_xp3.py         .xp3 archives and patches
+│   ├── krkr_tlg.py         TLG5 and TLG6 images
+│   ├── krkr_image.py       file types and layered sprites
+│   ├── krkr_psb.py         PSB to JSON
+│   ├── krkr_script.py      scene database text
+│   ├── krkr_extract.py     full extraction and patch packing
+│   ├── _krkr.c             native TLG decoding
+│   ├── krkr_common.py      shared helpers
+│   ├── krkr_tool.py        command line
+│   ├── krkr_gui.py         graphical interface
+│   └── build_exe.bat
 ├── nexas-engine/         NeXAS Tools
 │   ├── nexas_pac.py        .pac archives
 │   ├── nexas_compress.py   Huffman and LZSS
@@ -172,7 +192,8 @@ VNTools/
 - HCB format research: binaryfail, akerou (original C++ tool)
 - WillPlus format reference: [vn-tools/arc_unpacker](https://github.com/vn-tools/arc_unpacker)
 - CPK and Yeti format references: see [yeti-engine/README.md](yeti-engine/README.md#credits)
-- NeXAS PAC, CatSystem2 INT, HG-3 and BGI format reference: [morkt/GARbro](https://github.com/morkt/GARbro)
+- NeXAS PAC, CatSystem2 INT, HG-3, BGI, XP3 and TLG format reference: [morkt/GARbro](https://github.com/morkt/GARbro)
+- PSB format reference: [UlyssesWu/FreeMote](https://github.com/UlyssesWu/FreeMote)
 
 ## License
 
