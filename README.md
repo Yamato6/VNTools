@@ -12,6 +12,7 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 | [**CatSystem2 Tools**](cs2-engine/) | CatSystem2 | Grisaia no Kajitsu, Grisaia no Meikyuu, Grisaia no Rakuen | encrypted `.int` archives, HG-3 images, `.cst` scripts, audio, video |
 | [**BGI Tools**](bgi-engine/) | BGI / Ethornell | Daitoshokan no Hitsujikai, Koi to Senkyo to Chocolate HR | `.arc` archives, CompressedBG images, scripts, audio, video |
 | [**KiriKiri Tools**](krkr-engine/) | KiriKiri 2 (KAG / KAGEX) | Noble Works | `.xp3` archives, TLG images, layered sprites, scene databases, PSB |
+| [**Siglus Tools**](siglus-engine/) | SiglusEngine | Hoshi Ori Yume Mirai Perfect Edition | `Scene.pck` scripts, G00 images, NWA/OVK audio, OMV video, `Gameexe.dat` |
 
 ## Features
 
@@ -68,15 +69,21 @@ Tools for extracting, editing and repacking the assets of Japanese visual novels
 - Extract the text of the scene databases (lines, names, choices, scene titles) with the voice file of each line, and the text under a translation patch as a reference. **Translated lines can be any length**
 - **Make a patch** (`patch4.xp3`) with the edited files and the translated text, which the game loads on top of its own files: the original archives are never touched
 
+**Siglus Tools** (`siglus-engine/`)
+- Browse the game's resources with image preview, and extract everything in one step, resuming an interrupted extraction. G00 images become PNG, NWA audio `.wav`, the voices of the `.ovk` archives `.ogg` and OMV videos `.ogv`
+- The `Scene.pck` key is found automatically, and the scenes are disassembled to tell text, speaker names and voices apart from file names
+- Extract the text with the voice file of each line and another language as a reference, and rebuild it. **Translated lines can be any length**
+- **Pack** edited images back to `.g00` and `Gameexe.txt` back to `Gameexe.dat`
+
 ## Quick start
 
 Requires Python 3.8 or newer (3.11 or newer for KiriKiri Tools).
 
 ```bash
 git clone https://github.com/Yamato6/VNTools.git
-cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine, nexas-engine, cs2-engine, bgi-engine, krkr-engine
+cd VNTools/fvp                 # or fs-engine, yeti-engine, advhd-engine, nexas-engine, cs2-engine, bgi-engine, krkr-engine, siglus-engine
 pip install -r requirements.txt
-python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py, nexas_gui.py, cs2_gui.py, bgi_gui.py, krkr_gui.py
+python fvp_gui.py              # or: python crosschannel_gui.py, yeti_gui.py, advhd_gui.py, nexas_gui.py, cs2_gui.py, bgi_gui.py, krkr_gui.py, siglus_gui.py
 ```
 
 Running the command line tool without arguments also opens the GUI:
@@ -95,6 +102,7 @@ See each tool's README for every command and the file format documentation:
 - [cs2-engine/README.md](cs2-engine/README.md)
 - [bgi-engine/README.md](bgi-engine/README.md)
 - [krkr-engine/README.md](krkr-engine/README.md)
+- [siglus-engine/README.md](siglus-engine/README.md)
 
 ## Standalone executable
 
@@ -173,6 +181,20 @@ VNTools/
 │   ├── nexas_tool.py       command line
 │   ├── nexas_gui.py        graphical interface
 │   └── build_exe.bat
+├── siglus-engine/        Siglus Tools
+│   ├── siglus_crypto.py    XOR tables, LZ and key search
+│   ├── siglus_pck.py       Scene.pck
+│   ├── siglus_ss.py        compiled scenes and bytecode
+│   ├── siglus_script.py    text extraction and rebuilding
+│   ├── siglus_g00.py       G00 images
+│   ├── siglus_audio.py     NWA, OVK and OMV
+│   ├── siglus_gameexe.py   Gameexe.dat and .dbs tables
+│   ├── siglus_extract.py   full extraction and packing
+│   ├── _siglus.c           native LZ and NWA decoding
+│   ├── siglus_common.py    shared helpers
+│   ├── siglus_tool.py      command line
+│   ├── siglus_gui.py       graphical interface
+│   └── build_exe.bat
 └── yeti-engine/          Yeti Tools
     ├── yeti_cpk.py         .cpk archives
     ├── yeti_utf.py         CRIWARE @UTF tables
@@ -192,8 +214,9 @@ VNTools/
 - HCB format research: binaryfail, akerou (original C++ tool)
 - WillPlus format reference: [vn-tools/arc_unpacker](https://github.com/vn-tools/arc_unpacker)
 - CPK and Yeti format references: see [yeti-engine/README.md](yeti-engine/README.md#credits)
-- NeXAS PAC, CatSystem2 INT, HG-3, BGI, XP3 and TLG format reference: [morkt/GARbro](https://github.com/morkt/GARbro)
+- NeXAS PAC, CatSystem2 INT, HG-3, BGI, XP3, TLG, G00 and NWA format reference: [morkt/GARbro](https://github.com/morkt/GARbro)
 - PSB format reference: [UlyssesWu/FreeMote](https://github.com/UlyssesWu/FreeMote)
+- SiglusEngine references: [xmoezzz/siglus_rs](https://github.com/xmoezzz/siglus_rs) (scene bytecode), [hiroshil/SiglusEngine](https://github.com/hiroshil/SiglusEngine)
 
 ## License
 
